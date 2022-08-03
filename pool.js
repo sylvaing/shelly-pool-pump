@@ -8,6 +8,7 @@ let status = {
   temp_yesterday: null,
   next_noon: 12,
   freeze_mode: false,
+  coeff: 2,
 
 
   update_time: null,
@@ -68,12 +69,12 @@ function compute_duration_filt_abacus(t){
   new_t = Math.max(t, 10);
 
   //coefficient multiplicateur pour ajuster le temps de filtration
-  let coeff = 1;
+  //let coeff = 1;
 
-  let a = 0.00335 * coeff;
-  let b = -0.14953 * coeff;
-  let c = 2.43489 * coeff;
-  let d = -10.72859 * coeff;
+  let a = 0.00335 * status.coeff;
+  let b = -0.14953 * stauts.coeff;
+  let c = 2.43489 * status.coeff;
+  let d = -10.72859 * status.coeff;
 
   return (  (a * Math.pow(new_t,3)) + ( b * Math.pow(new_t,2)) + ( c * new_t ) + d );
 
@@ -297,6 +298,7 @@ function update_pump_hivernage(){
 
 function update_temp(obj) {
   status.tick_temp++;
+  status.coeff = obj.coeff_filt;
   update_next_noon(obj.next_noon);
   let temp = obj.temperature;
   let temp_ext = obj.temperature_ext;
@@ -381,7 +383,7 @@ MQTT.subscribe(
     status.tick_mqtt++;
     print("[POOL] mqtt", topic);
     let obj = JSON.parse(msg);
-    if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined))  {
+    if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) || (obj.coeff_filt === undefined))  {
       return;
     }
     update_temp(obj);
