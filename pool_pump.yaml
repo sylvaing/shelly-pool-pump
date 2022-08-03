@@ -1,0 +1,68 @@
+
+mqtt:
+  sensor:
+    - object_id : "pool_pump_start"
+      name: "Start"
+      state_topic: "pool_pump/info"
+      icon: mdi:clock
+      qos: 0
+      unit_of_measurement: ""
+      value_template: "{{value_json.start}}"
+    - object_id : "pool_pump_stop"
+      name: "Stop"
+      state_topic: "pool_pump/info"
+      qos: 0
+      unit_of_measurement: ""
+      value_template: "{{value_json.stop}}"
+      icon: mdi:clock
+    - object_id : "pool_pump_duration"
+      name: "Duration"
+      state_topic: "pool_pump/info"
+      qos: 0
+      unit_of_measurement: ""
+      value_template: "{{value_json.duration}}"
+      icon: mdi:timer
+    - object_id : "pool_pump_mode"
+      name: "Mode"
+      state_topic: "pool_pump/info"
+      qos: 0
+      unit_of_measurement: ""
+      value_template: "{{value_json.mode}}"
+      icon: mdi:sun-snowflake-variant
+
+input_number:
+  coeff_filtration:
+    name: coeff filtration
+    icon: mdi:close-circle-multiple
+    min: 0.6
+    max: 1.60
+    step: 0.1
+
+
+automation:
+  - alias: Pool - publish zenith yaml
+    description: ''
+    trigger:
+      - platform: state
+        entity_id:
+          - sun.sun
+        attribute: next_noon
+      - platform: state
+        entity_id:
+          - sensor.piscine_eclairage_temperature
+          - input_number.coeff_filtration
+    condition: []
+    action:
+      - service: mqtt.publish
+        data:
+          topic: ha/pool
+          payload_template: >-
+            {"next_noon": "{{ as_timestamp(state_attr('sun.sun', 'next_noon')) |
+            timestamp_custom('%H:%M') }}",
+            "temperature": {{ states('sensor.piscine_eclairage_temperature') }},
+            "temperature_ext": {{ states('sensor.piscine_eclairage_temperature_2') }},
+            "coeff_filt": {{ states('input_number.coeff_filtration') }}
+            }
+          retain: true
+    mode: single
+    
