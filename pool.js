@@ -133,12 +133,8 @@ function compute_schedule_filt_pivot(d) {
   let aprem = d - matin;
   s = [ status.next_noon - matin, status.next_noon + aprem ];
 
-  let h = Math.floor(s[0]);
-  let m = Math.floor((s[0]- h)*60);
-  status.start = JSON.stringify(h) +":" + JSON.stringify(m);
-  h = Math.floor(s[1]);
-  m = Math.floor((s[1]- h)*60);
-  status.stop= JSON.stringify(h) +":" + JSON.stringify(m);
+  status.start = JSON.stringify(s[0]);
+  status.stop = JSON.stringify(s[1]);
 
   return s;
 }
