@@ -72,7 +72,7 @@ function compute_duration_filt_abacus(t){
   //let coeff = 1;
 
   let a = 0.00335 * status.coeff;
-  let b = -0.14953 * stauts.coeff;
+  let b = -0.14953 * status.coeff;
   let c = 2.43489 * status.coeff;
   let d = -10.72859 * status.coeff;
 
@@ -337,6 +337,8 @@ function update_temp(obj) {
 
         if (t < status.update_time)
           update_new_day();
+        
+        status.update_time = t;
 
         // freeze_mode
         if (status.temp_ext < 2){
