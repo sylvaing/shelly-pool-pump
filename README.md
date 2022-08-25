@@ -1,5 +1,5 @@
 # shelly-pool-pump
-automatic schedule of you pool pump with temperature and freeze mode
+automatic schedule of your pool pump with temperature and freeze mode
 
 base on shelly script of ggilles:
 https://www.shelly-support.eu/forum/index.php?thread/14810-script-randomly-killed-on-shelly-plus-1pm/
