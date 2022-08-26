@@ -331,6 +331,7 @@ function update_temp(obj) {
         // compute current time in float format (12h45 -> 12.75)
         let t = JSON.parse(time.slice(0,2)) + JSON.parse(time.slice(3,5)) / 60;
 
+        print("[POOL] update_new_day debug IF - t:", t, " < update_time:", status.update_time);
         if (t < status.update_time)
           update_new_day();
         
@@ -423,7 +424,7 @@ Timer.set(
       "Sys.GetStatus",
       {},
       function (result) {
-        print("[POOL] tick", result.time);
+        print("[POOL] time : ", result.time, ", update_time : "status.update_time, " , uptime : ", result.uptime);
         status.time = result.time;
         status.uptime = result.uptime;
       }
