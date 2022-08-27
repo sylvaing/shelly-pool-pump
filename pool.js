@@ -318,9 +318,9 @@ function update_temp(obj) {
   status.temp_max   = Math.max(status.temp_today, status.temp_yesterday);
 
   print("[POOL] update_temp - max:", status.temp_max, "today:", status.temp_today, "yesterday:", status.temp_yesterday);
+  print("[POOL] update_temp - update_temp_max:", status.temp_max, "update_temp_max_last:", status.update_temp_max_last, "temp_ext:", status.temp_ext);
 
   
-  if ((status.temp_max !== status.update_temp_max_last) || (status.temp_ext < 2 ) || (status.freeze_mode === true))  {
     Shelly.call (
       "Sys.GetStatus",
       {},
@@ -336,38 +336,39 @@ function update_temp(obj) {
           update_new_day();
         
         status.update_time = t;
-
+        
+        if ((status.temp_max !== status.update_temp_max_last) || (status.temp_ext < 2 ) || (status.freeze_mode === true))  {
         // freeze_mode
-        if (status.temp_ext < 2){
-          print("[POOL] Mode hivernage - temp : ", status.temp_ext);
-          status.freeze_mode = true;
-          update_pump_hivernage();
-          //publish_mqtt_info()
-        }
-        else{
-          status.freeze_mode = false;
-          // faire ici peut-être un off de la pompe.. qui sort du freeze mode
-          if (status.temp_max !== null) {
-           // if ((t - status.update_time_last) > 0.15) { // 9 minutes
-              update_pump(status.temp, status.temp_max, t);
-              status.update_time_last = t;
-              status.update_temp_max_last = status.temp_max;
-           // }
-           // else {
-           //   status.tick_pump_skip++;
-           //   print("[POOL] to much update_pump, skipped", status.tick_pump_skip);
-           // }
+          if (status.temp_ext < 2){
+            print("[POOL] Mode hivernage - temp : ", status.temp_ext);
+            status.freeze_mode = true;
+            update_pump_hivernage();
+            //publish_mqtt_info()
           }
-        } 
+          else{
+            status.freeze_mode = false;
+            // faire ici peut-être un off de la pompe.. qui sort du freeze mode
+            if (status.temp_max !== null) {
+            // if ((t - status.update_time_last) > 0.15) { // 9 minutes
+                update_pump(status.temp, status.temp_max, t);
+                status.update_time_last = t;
+                status.update_temp_max_last = status.temp_max;
+            // }
+            // else {
+            //   status.tick_pump_skip++;
+            //   print("[POOL] to much update_pump, skipped", status.tick_pump_skip);
+            // }
+            }
+          }
+        } else {
+          print("[POOL] no temp change, skip update_pump");
+        }
+        status.lock_update = false;
         publish_mqtt_info()
       }
     );
-  }
-  else {
-    print("[POOL] no temp change, skip update_pump");
-  }
+
 //}
-  status.lock_update = false;
   
 
 
@@ -424,7 +425,9 @@ Timer.set(
       "Sys.GetStatus",
       {},
       function (result) {
-        print("[POOL] time : ", result.time, ", update_time : "status.update_time, " , uptime : ", result.uptime);
+        print("[POOL] DEBUG time : ", result.time, ", update_time : "status.update_time, " , uptime : ", result.uptime);
+        print("[POOL] DEBUG temp:", status.temp_max, "update_temp_max_last:", status.update_temp_max_last, "temp_ext:", status.temp_ext);
+
         status.time = result.time;
         status.uptime = result.uptime;
       }
