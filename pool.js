@@ -1,6 +1,6 @@
 print("[POOL] start");
 
-let status = {
+let STATUS = {
   temp: null,
   current_temp: null,
   temp_ext:null,
@@ -15,9 +15,11 @@ let status = {
   update_time: null,
   update_time_last: 0,
   update_temp_max_last: null,
+  current_time: null,
 
   disable_temp: null,
   lock_update: false,
+  make_unlock: false,
 
   duration: null,
   schedule: null,
@@ -65,6 +67,7 @@ let status = {
   update_period: 2500,
 };
 
+//print("[POOL_CALL] get_deviceinfo at start");
 Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
   CONFIG.shelly_id = result.id;
   CONFIG.shelly_mac = result.mac;
@@ -113,6 +116,7 @@ function buildMQTTStateCmdTopics(hatype, topic) {
  * @param {boolean} sw_state
  */
 function switchActivate(sw_state) {
+  //print("[POOL_CALL] switch set _ switchActivate");
   Shelly.call("Switch.Set", {
     id: 0,
     on: sw_state,
@@ -135,20 +139,23 @@ function MQTTCmdListener(topic, message) {
  * @param {string} message
  */
  function MQTTCmdListenerNumber(topic, message) {
+  if (STATUS.lock_update === false){
+
   print("[MQTT] listen Number", message);
   let obj = JSON.parse(message);
-  print("[MQTT-LISTEN] listen Number - status.coeff", obj);
-  // if (obj !== status.coeff){
-    status.coeff = obj;
-    MQTT.publish(buildMQTTStateCmdTopics("number", "state"), JSON.stringify(status.coeff));
-    print("[MQTT] listen Number - status.coeff", status.coeff);
+  print("[MQTT-LISTEN] listen Number - STATUS.coeff", obj);
+  // if (obj !== STATUS.coeff){
+    STATUS.coeff = obj;
+    MQTT.publish(buildMQTTStateCmdTopics("number", "state"), JSON.stringify(STATUS.coeff));
+    print("[MQTT] listen Number - STATUS.coeff", STATUS.coeff);
     // let _obj = {
-    //   coeff_filt : status.coeff,
-    //   next_noon : status.next_noon,
-    //   temperature : status.temp,
-    //   temperature_ext : status.temp_ext,
+    //   coeff_filt : STATUS.coeff,
+    //   next_noon : STATUS.next_noon,
+    //   temperature : STATUS.temp,
+    //   temperature_ext : STATUS.temp_ext,
     // };
-    update_temp(true);
+      update_temp(true);
+    }
   // }
 }
 
@@ -166,6 +173,9 @@ Shelly.addEventHandler(function (ev_data) {
 });
 
 function publishState() {
+  //print("[POOL_CALL] get_status publishState");
+  //let ul = unlock;
+  //let toto = "#####ZZZZZ####";
   Shelly.call("Switch.GetStatus", { id: 0 }, function (result) {
     let _sensor = {
       duration: 0,
@@ -173,10 +183,10 @@ function publishState() {
       stop: 0,
       mode: "null",
     };
-    _sensor.duration = status.duration;
-    _sensor.start = status.start;
-    _sensor.stop = status.stop;
-    if (status.freeze_mode === true){
+    _sensor.duration = STATUS.duration;
+    _sensor.start = STATUS.start;
+    _sensor.stop = STATUS.stop;
+    if (STATUS.freeze_mode === true){
       _sensor.mode = 'freeze';
     }else{
       _sensor.mode = 'summer';
@@ -189,7 +199,13 @@ function publishState() {
     let _state_str = _sensor.state ? "on" : "off";
     MQTT.publish(buildMQTTStateCmdTopics("switch", "state"), _state_str);
 
-    MQTT.publish(buildMQTTStateCmdTopics("number", "state"),JSON.stringify(status.coeff));
+    MQTT.publish(buildMQTTStateCmdTopics("number", "state"),JSON.stringify(STATUS.coeff));
+
+    if (STATUS.make_unlock){
+      STATUS.lock_update = false;
+      STATUS.make_unlock = false;
+    }
+
   });
 }
 
@@ -356,12 +372,12 @@ function compute_duration_filt_abacus(t){
   //coefficient multiplicateur pour ajuster le temps de filtration
   //let coeff = 1;
 
-  print("[ABACUS]  status.coeff = ", status.coeff);
+  print("[POOL_ABACUS]  STATUS.coeff = ", STATUS.coeff);
 
-  let a = 0.00335 * status.coeff;
-  let b = -0.14953 * status.coeff;
-  let c = 2.43489 * status.coeff;
-  let d = -10.72859 * status.coeff;
+  let a = 0.00335 * STATUS.coeff;
+  let b = -0.14953 * STATUS.coeff;
+  let c = 2.43489 * STATUS.coeff;
+  let d = -10.72859 * STATUS.coeff;
 
   return (  (a * Math.pow(new_t,3)) + ( b * Math.pow(new_t,2)) + ( c * new_t ) + d );
 
@@ -371,11 +387,11 @@ function compute_duration_filt_abacus(t){
 // en fonction du zenith du soleil
 
 function update_next_noon(d){
-  // il faut aller chercher la valeur de sHA sun.sun next_noon et ensuite la convertir
-  print("[POOL] date pivot", d);
+  // il faut aller chercher la valeur de HA sun.sun next_noon et ensuite la convertir
+  print("[POOL_NEXT_NOON] date pivot", d);
   let new_d = JSON.parse(d.slice(0,2)) + JSON.parse(d.slice(3,5)) / 60;
-  status.next_noon = new_d;
-  print("[POOL] new_date pivot", new_d);
+  STATUS.next_noon = new_d;
+  print("[POOL_NEXT_NOON] new_date pivot", new_d);
 }
 
 // compute the pump schedule for a given duration
@@ -385,10 +401,10 @@ function compute_schedule_filt_pivot(d) {
   let s = null;
   let matin = Math.round(d)/2;
   let aprem = d - matin;
-  s = [ status.next_noon - matin, status.next_noon + aprem ];
+  s = [ STATUS.next_noon - matin, STATUS.next_noon + aprem ];
 
-  status.start = JSON.stringify(s[0]);
-  status.stop = JSON.stringify(s[1]);
+  STATUS.start = JSON.stringify(s[0]);
+  STATUS.stop = JSON.stringify(s[1]);
 
   return s;
 }
@@ -404,10 +420,10 @@ function time_to_timespec(t) {
 
 // new day, update status
 function update_new_day() {
-  status.tick_day++;
-  print("[POOL] update_new_day", status.tick_day);
-  status.temp_yesterday = status.temp_today;
-  status.temp_today = null;
+  STATUS.tick_day++;
+  print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
+  STATUS.temp_yesterday = STATUS.temp_today;
+  STATUS.temp_today = null;
 }
 
 // call a chain of API calls
@@ -436,8 +452,8 @@ function do_call(calls) {
 // compute & configure pump schedule
 
 function update_pump(temp, max, time) {
-  status.tick_pump++;
-  print("[POOL] update_pump", status.tick_pump, "- temp:", temp, "max:", max, "time:", time);
+  STATUS.tick_pump++;
+  print("[POOL] update_pump", STATUS.tick_pump, "- temp:", temp, "max:", max, "time:", time);
 
   let duration_abacus = compute_duration_filt_abacus(max);
   let schedule = compute_schedule_filt_pivot(duration_abacus);
@@ -447,11 +463,13 @@ function update_pump(temp, max, time) {
 
   
   
-  status.duration = duration_abacus;
-  status.schedule = schedule;
+  STATUS.duration = duration_abacus;
+  STATUS.schedule = schedule;
   let calls = [];
 
   calls.push({method: "Schedule.DeleteAll", params: null});
+
+  print("[POOL] update_pump - after schedule:" );
 
   let on = true;
   for (let i = 0; i < schedule.length; i++) {
@@ -502,42 +520,45 @@ function update_pump_hivernage(){
 // - do a pump update if the last one didn't happen too close and if max temp has changed
 
 function update_temp(fromUpdateCoeff) {
-  status.tick_temp++;
+  STATUS.tick_temp++;
 
-  print("[POOL] update_temp", status.tick_temp, status.current_temp);
+  print("[POOL] update_temp", STATUS.tick_temp, STATUS.current_temp);
 
-  if (status.disable_temp !== null) {
+  if (STATUS.disable_temp !== null) {
     print("[POOL] update disabled");
     return;
   }
 
-  if (status.lock_update) {
+  if (STATUS.lock_update) {
     print("[POOL] update_temp locked");
     return;
   }
-  status.lock_update = true;
+  STATUS.lock_update = true;
 
-  status.temp = Math.round(status.current_temp * 10) / 10;
-  status.temp_today = Math.max(status.temp_today, status.temp);
-  status.temp_max   = Math.max(status.temp_today, status.temp_yesterday);
+  STATUS.temp = Math.round(STATUS.current_temp * 10) / 10;
+  STATUS.temp_today = Math.max(STATUS.temp_today, STATUS.temp);
+  STATUS.temp_max   = Math.max(STATUS.temp_today, STATUS.temp_yesterday);
 
-  print("[POOL] update_temp - max:", status.temp_max, "today:", status.temp_today, "yesterday:", status.temp_yesterday);
-  print("[POOL] update_temp - update_temp_max:", status.temp_max, "update_temp_max_last:", status.update_temp_max_last, "temp_ext:", status.temp_ext);
+  print("[POOL] update_temp - max:", STATUS.temp_max, "today:", STATUS.temp_today, "yesterday:", STATUS.temp_yesterday);
+  print("[POOL] update_temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last, "temp_ext:", STATUS.temp_ext);
 
+  get_current_time();
   
-  if ((status.temp_max !== status.update_temp_max_last) ||
-      (status.temp_ext < 2 ) ||
-      (status.freeze_mode === true) ||
+  if ((STATUS.temp_max !== STATUS.update_temp_max_last) ||
+      (STATUS.temp_ext < 2 ) ||
+      (STATUS.freeze_mode === true) ||
       (fromUpdateCoeff === true) )   {
+
         update_temp_call();
   }
   else {
     print("[POOL] no temp change, skip update_pump");
+    STATUS.lock_update = false;
   }
-  status.lock_update = false;
 }
 
-function update_temp_call(){
+function get_current_time(){
+  // print("[POOL_CALL] get_status current time");
   Shelly.call (
     "Sys.GetStatus",
     {},
@@ -548,38 +569,56 @@ function update_temp_call(){
       // compute current time in float format (12h45 -> 12.75)
       let t = JSON.parse(time.slice(0,2)) + JSON.parse(time.slice(3,5)) / 60;
 
-      print("[POOL] update_new_day debug IF - t:", t, " < update_time:", status.update_time);
-      if (t < status.update_time)
+      print("[POOL_CURRENT_TIME] current_time:", t);
+      print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " < update_time:", STATUS.update_time);
+      if (t < STATUS.update_time)
         update_new_day();
-      
-      status.update_time = t;
-
-      // freeze_mode
-      if (status.temp_ext < 2){
-        print("[POOL] Mode hivernage - temp : ", status.temp_ext);
-        status.freeze_mode = true;
-        update_pump_hivernage();
-        publishState()
-      }
-      else{
-        status.freeze_mode = false;
-        // faire ici peut-être un off de la pompe.. qui sort du freeze mode
-        if (status.temp_max !== null) {
-         // if ((t - status.update_time_last) > 0.15) { // 9 minutes
-            update_pump(status.temp, status.temp_max, t);
-            status.update_time_last = t;
-            status.update_temp_max_last = status.temp_max;
-         // }
-         // else {
-         //   status.tick_pump_skip++;
-         //   print("[POOL] to much update_pump, skipped", status.tick_pump_skip);
-         // }
-        }
-      } 
-      //publish_mqtt_info()
-      publishState()
+  
+      STATUS.current_time = t;
     }
   );
+}
+
+function update_temp_call(){
+
+  STATUS.update_time = STATUS.current_time;
+  
+  // freeze_mode
+  if (STATUS.temp_ext < 2){
+    print("[POOL] Mode hivernage - temp : ", STATUS.temp_ext);
+    STATUS.freeze_mode = true;
+    update_pump_hivernage();
+    // too much RPC (limit to 5)
+    // the update_temp is locked and unlock only on publishstate.
+    // add make_unlock, to tel publishState to unlock on his call RPC
+    //  -> I can't pass arg to function to reuse it into rpc call of publishState
+    STATUS.make_unlock = true;
+    publishState()
+  }
+  else{
+    STATUS.freeze_mode = false;
+    // faire ici peut-être un off de la pompe.. qui sort du freeze mode
+    if (STATUS.temp_max !== null) {
+      // if ((t - STATUS.update_time_last) > 0.15) { // 9 minutes
+        update_pump(STATUS.temp, STATUS.temp_max, STATUS.update_time);
+        STATUS.update_time_last = STATUS.update_time;
+        STATUS.update_temp_max_last = STATUS.temp_max;
+      // }
+      // else {
+      //   STATUS.tick_pump_skip++;
+      //   print("[POOL] to much update_pump, skipped", STATUS.tick_pump_skip);
+      // }
+    }
+  }
+
+  // too much RPC (limit to 5)
+  // the update_temp is locked and unlock only on publishstate.
+  // add make_unlock, to tel publishState to unlock on his call RPC
+  //  -> I can't pass arg to function to reuse it into rpc call of publishState
+    STATUS.make_unlock = true;
+    publishState()
+
+
 }
 
 // receives update from Pool Sensor
@@ -587,15 +626,15 @@ function update_temp_call(){
 MQTT.subscribe(
   "ha/pool",
   function (topic, msg) {
-    status.tick_mqtt++;
+    STATUS.tick_mqtt++;
     print("[POOL] mqtt", topic);
     let obj = JSON.parse(msg);
     if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) )  {
       return;
     }
     update_next_noon(obj.next_noon);
-    status.current_temp = obj.temperature;
-    status.temp_ext = obj.temperature_ext;
+    STATUS.current_temp = obj.temperature;
+    STATUS.temp_ext = obj.temperature_ext;
     update_temp();
   }
 )
@@ -606,19 +645,19 @@ MQTT.subscribe(
 Shelly.addEventHandler(
   function (data) {
     if (data.info.event === "toggle") {
-      status.tick_lock++;
-      print("[POOL] disable temp", status.tick_lock);
+      STATUS.tick_lock++;
+      print("[POOL] disable temp", STATUS.tick_lock);
 
-      if (status.disable_temp !== null)
-        Timer.clear(status.disable_temp);
+      if (STATUS.disable_temp !== null)
+        Timer.clear(STATUS.disable_temp);
 
-      status.disable_temp = Timer.set(
+      STATUS.disable_temp = Timer.set(
         60 * 100,
         //60 * 1000,
         false,
         function () {
           print("[POOL] re-enable temp");
-          status.disable_temp = null;
+          STATUS.disable_temp = null;
         }
       );
     }
@@ -631,16 +670,17 @@ Timer.set(
   60 * 1000,
   true,
   function() {
-    status.tick++;
+    STATUS.tick++;
     Shelly.call (
       "Sys.GetStatus",
       {},
       function (result) {
-        print("[POOL] DEBUG time : ", result.time, ", update_time : "status.update_time, " , uptime : ", result.uptime);
-        print("[POOL] DEBUG - update_temp_max:", status.temp_max, "update_temp_max_last:", status.update_temp_max_last, "temp_ext:", status.temp_ext);
+        print("[POOL] DEBUG time : ", result.time, ", update_time : " STATUS.update_time, " , uptime : ", result.uptime);
+        print("[POOL] DEBUG temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last);
+        print("[POOL] DEBUG temp - temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
 
-        status.time = result.time;
-        status.uptime = result.uptime;
+        STATUS.time = result.time;
+        STATUS.uptime = result.uptime;
       }
     );
   }
