@@ -10,6 +10,8 @@ let STATUS = {
   next_noon: 12,
   freeze_mode: false,
   coeff: 1.2,
+  sel_mode: "Auto",
+  sel_update: false,
 
 
   update_time: null,
@@ -114,13 +116,32 @@ function buildMQTTStateCmdTopics(hatype, topic) {
 /**
  * Control device switch
  * @param {boolean} sw_state
+ * * @param {boolean} nolock
  */
-function switchActivate(sw_state) {
+function switchActivate(sw_state, nolock) {
   print("[POOL_CALL] switch set _ switchActivate");
   Shelly.call("Switch.Set", {
     id: 0,
     on: sw_state,
   });
+
+  if ( nolock !== true ){
+    STATUS.tick_lock++;
+    print("[POOL] disable temp", STATUS.tick_lock);
+
+    if (STATUS.disable_temp !== null)
+      Timer.clear(STATUS.disable_temp);
+
+    STATUS.disable_temp = Timer.set(
+      6 * 100,
+      //600 * 1000,
+      false,
+      function () {
+        print("[POOL] re-enable temp");
+        STATUS.disable_temp = null;
+      }
+    );
+  }
 }
 
 /**
@@ -158,6 +179,42 @@ function MQTTCmdListener(topic, message) {
     }
   // }
 }
+
+/**
+ * Listen to ~/cmd topic for select mode control
+ * @param {string} topic
+ * @param {string} message
+ */
+function MQTTCmdListenerSelect(topic, message) {
+
+  print("[MQTT] listen SELECT", message);
+  CONFIG.sel_mode = message;
+  if (message === "Auto"){
+    print("[MQTT-SELECT] AUTO", message);
+    // fonctionnement Automatique normal
+    // appel du calcul de la pompe
+    update_temp(false,true);
+  }else if (message === "Force on"){
+    print("[MQTT-SELECT] FORCE ON", message);
+    // start pump & delete schedule
+    let calls = [];
+    calls.push({method: "Schedule.DeleteAll", params: null});
+    do_call(calls);
+
+    switchActivate(true,true);
+    
+  }else if (message === "Force off"){
+    print("[MQTT-SELECT] FORCE OFF", message);
+    // stop pump & delete schedule
+    let calls = [];
+    calls.push({method: "Schedule.DeleteAll", params: null});
+    do_call(calls);
+
+    switchActivate(false,true);
+  }
+
+}
+
 
 /**
  * Publish update on switch change
@@ -261,6 +318,30 @@ function initMQTT() {
     0,
     true
   );
+
+  MQTT.subscribe(buildMQTTStateCmdTopics("select", "cmd"), MQTTCmdListenerSelect);
+  /**
+   * Configure the select Mode
+   */
+  let options = [
+    "Auto",
+    "Force on",
+    "Force off",
+  ];
+  MQTT.publish(
+    buildMQTTConfigTopic("select", "mode"),
+    JSON.stringify({
+      dev: CONFIG.ha_dev_type,
+      "~": buildMQTTStateCmdTopics("select"),
+      cmd_t: "~/cmd",
+      options: options,
+      retain: "true",
+      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_selectMode",
+    }),
+    0,
+    true
+  );
+
 
 
   /**
@@ -488,14 +569,35 @@ function update_pump(temp, max, time) {
     on = !on;
   }
 
+  // // compute the current switch state according to the schedule
+  // on = false;
+  // let j = false;
+  // for (let i = 0; i < schedule.length; i++) {
+  //   j = !j;
+  //   print("[POOL SWITCH] time:", time ,"schedule[i]");
+  //   if (time >= schedule[i])
+      
+  //     on = j;
+  // }
+  // print("[POOL SWITCH] time:", time ,"");
+
+  // calls.push({method: "Switch.Set", params: {id: 0, on: on}});
+  compute_switch_from_schedule();
+
+  do_call(calls);
+}
+
+function compute_switch_from_schedule(){
+
   // compute the current switch state according to the schedule
+  STATUS.schedule = schedule;
+  STATUS.update_time = time;
   on = false;
   let j = false;
   for (let i = 0; i < schedule.length; i++) {
     j = !j;
     print("[POOL SWITCH] time:", time ,"schedule[i]");
     if (time >= schedule[i])
-      
       on = j;
   }
   print("[POOL SWITCH] time:", time ,"");
@@ -503,6 +605,7 @@ function update_pump(temp, max, time) {
   calls.push({method: "Switch.Set", params: {id: 0, on: on}});
 
   do_call(calls);
+
 }
 
 function update_pump_hivernage(){
@@ -522,13 +625,17 @@ function update_pump_hivernage(){
 // - retrieve current time
 // - switch to new day
 // - do a pump update if the last one didn't happen too close and if max temp has changed
-
-function update_temp(fromUpdateCoeff) {
+/**
+ * Listen to ~/cmd topic for number control Coefficient filtrage
+ * @param {boolean} fromUpdateCoeff
+ * @param {boolean} nodisable
+ */
+function update_temp(fromUpdateCoeff, nodisable) {
   STATUS.tick_temp++;
 
   print("[POOL] update_temp", STATUS.tick_temp, STATUS.current_temp);
 
-  if (STATUS.disable_temp !== null) {
+  if ((STATUS.disable_temp !== null) || ( nodisable !== true)) {
     print("[POOL] update disabled");
     return;
   }
@@ -551,11 +658,14 @@ function update_temp(fromUpdateCoeff) {
   if ((STATUS.temp_max !== STATUS.update_temp_max_last) ||
       (STATUS.temp_ext < 2 ) ||
       (STATUS.freeze_mode === true) ||
-      (fromUpdateCoeff === true) )   {
+      (fromUpdateCoeff === true)  ||
+      (nodisable === true) ) {
 
         update_temp_call();
-  }
-  else {
+
+  }else if( (STATUS.sel_mode === "Force on") || (STATUS.sel_mode === "Force off")){
+    return 0;
+  }else {
     print("[POOL] no temp change, skip update_pump");
     STATUS.lock_update = false;
   }
@@ -645,27 +755,28 @@ MQTT.subscribe(
 // after a Switch Event, disable temp update
 // during 10 minutes (600 * 10000)
 
-Shelly.addEventHandler(
-  function (data) {
-    if (data.info.event === "toggle") {
-      STATUS.tick_lock++;
-      print("[POOL] disable temp", STATUS.tick_lock);
+// Shelly.addEventHandler(
+//   function (data) {
+//     if ((data.info.event === "toggle") && ( STATUS.sel_update !== true )){
+//       STATUS.tick_lock++;
+//       print("[POOL] disable temp", STATUS.tick_lock);
 
-      if (STATUS.disable_temp !== null)
-        Timer.clear(STATUS.disable_temp);
+//       if (STATUS.disable_temp !== null)
+//         Timer.clear(STATUS.disable_temp);
 
-      STATUS.disable_temp = Timer.set(
-        //60 * 100,
-        600 * 1000,
-        false,
-        function () {
-          print("[POOL] re-enable temp");
-          STATUS.disable_temp = null;
-        }
-      );
-    }
-  }
-);
+//       STATUS.disable_temp = Timer.set(
+//         6 * 100,
+//         //600 * 1000,
+//         false,
+//         function () {
+//           print("[POOL] re-enable temp");
+//           STATUS.disable_temp = null;
+//         }
+//       );
+//       STATUS.sel_update = false;
+//     }
+//   }
+// );
 
 // Debug...
 
