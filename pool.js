@@ -116,7 +116,7 @@ function buildMQTTStateCmdTopics(hatype, topic) {
  * @param {boolean} sw_state
  */
 function switchActivate(sw_state) {
-  //print("[POOL_CALL] switch set _ switchActivate");
+  print("[POOL_CALL] switch set _ switchActivate");
   Shelly.call("Switch.Set", {
     id: 0,
     on: sw_state,
@@ -422,8 +422,8 @@ function time_to_timespec(t) {
 function update_new_day() {
   STATUS.tick_day++;
   print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
-  STATUS.temp_yesterday = STATUS.temp_max;
-  //STATUS.temp_yesterday = STATUS.temp_today;
+  //STATUS.temp_yesterday = STATUS.temp_max;
+  STATUS.temp_yesterday = STATUS.temp_today;
   STATUS.temp_today = null;
 }
 
@@ -493,9 +493,12 @@ function update_pump(temp, max, time) {
   let j = false;
   for (let i = 0; i < schedule.length; i++) {
     j = !j;
+    print("[POOL SWITCH] time:", time ,"schedule[i]");
     if (time >= schedule[i])
+      
       on = j;
   }
+  print("[POOL SWITCH] time:", time ,"");
 
   calls.push({method: "Switch.Set", params: {id: 0, on: on}});
 
@@ -560,30 +563,29 @@ function update_temp(fromUpdateCoeff) {
 
 function get_current_time(){
   // print("[POOL_CALL] get_status current time");
-  Shelly.call (
-    "Sys.GetStatus",
-    {},
-    function (result) {
-      let time = result.time; // "HH:MM"
-      print("[POOL] time", time);
 
-      // compute current time in float format (12h45 -> 12.75)
-      let t = JSON.parse(time.slice(0,2)) + JSON.parse(time.slice(3,5)) / 60;
-
-      print("[POOL_CURRENT_TIME] current_time:", t);
-      print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " < update_time:", STATUS.update_time);
-      if (t < STATUS.update_time)
-        update_new_day();
+  // use getComponentStatus (sync call) instead of call of "Sys.GetStatus" ( async call)
+  let result = Shelly.getComponentStatus("sys"); 
+  print("[POOL_COMPONENT] time:", result.time);
   
-      STATUS.current_time = t;
-    }
-  );
+  let time = result.time; // "HH:MM"
+
+  // compute current time in float format (12h45 -> 12.75)
+  let t = JSON.parse(time.slice(0,2)) + JSON.parse(time.slice(3,5)) / 60;
+
+  print("[POOL_CURRENT_TIME] current_time:", t);
+  print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " < update_time:", STATUS.update_time);
+  if (t < STATUS.update_time)
+    update_new_day();
+
+  STATUS.current_time = t;
+
 }
 
 function update_temp_call(){
 
   STATUS.update_time = STATUS.current_time;
-  
+  print("[POOL TIME] ", STATUS.update_time);
   // freeze_mode
   if (STATUS.temp_ext < 2){
     print("[POOL] Mode hivernage - temp : ", STATUS.temp_ext);
