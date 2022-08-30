@@ -422,7 +422,8 @@ function time_to_timespec(t) {
 function update_new_day() {
   STATUS.tick_day++;
   print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
-  STATUS.temp_yesterday = STATUS.temp_today;
+  STATUS.temp_yesterday = STATUS.temp_max;
+  //STATUS.temp_yesterday = STATUS.temp_today;
   STATUS.temp_today = null;
 }
 
@@ -652,8 +653,8 @@ Shelly.addEventHandler(
         Timer.clear(STATUS.disable_temp);
 
       STATUS.disable_temp = Timer.set(
-        60 * 100,
-        //60 * 1000,
+        //60 * 100,
+        600 * 1000,
         false,
         function () {
           print("[POOL] re-enable temp");
@@ -675,9 +676,9 @@ Timer.set(
       "Sys.GetStatus",
       {},
       function (result) {
-        print("[POOL] DEBUG time : ", result.time, ", update_time : " STATUS.update_time, " , uptime : ", result.uptime);
-        print("[POOL] DEBUG temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last);
-        print("[POOL] DEBUG temp - temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
+        //print("[POOL] DEBUG time : ", result.time, ", update_time : " STATUS.update_time, " , uptime : ", result.uptime);
+        print("[POOL] DEBUG temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
+        //print("[POOL] DEBUG temp - temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
 
         STATUS.time = result.time;
         STATUS.uptime = result.uptime;
