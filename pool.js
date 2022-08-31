@@ -10,9 +10,7 @@ let STATUS = {
   next_noon: 12,
   freeze_mode: false,
   coeff: 1.2,
-  sel_mode: "Auto",
-  sel_update: false,
-
+  sel_mode: "Force off",
 
   update_time: null,
   update_time_last: 0,
@@ -132,6 +130,8 @@ function switchActivate(sw_state, nolock) {
     if (STATUS.disable_temp !== null)
       Timer.clear(STATUS.disable_temp);
 
+    print("[POOL_DISABLE_TEMP] disable temp", STATUS.tick_lock);
+
     STATUS.disable_temp = Timer.set(
       6 * 100,
       //600 * 1000,
@@ -149,10 +149,10 @@ function switchActivate(sw_state, nolock) {
  * @param {string} topic
  * @param {string} message
  */
-function MQTTCmdListener(topic, message) {
-  let _sw_state = message === "on" ? true : false;
-  switchActivate(_sw_state);
-}
+// function MQTTCmdListener(topic, message) {
+//   let _sw_state = message === "on" ? true : false;
+//   switchActivate(_sw_state);
+// }
 
 /**
  * Listen to ~/cmd topic for number control Coefficient filtrage
@@ -175,7 +175,7 @@ function MQTTCmdListener(topic, message) {
     //   temperature : STATUS.temp,
     //   temperature_ext : STATUS.temp_ext,
     // };
-      update_temp(true);
+      update_temp(true,false);
     }
   // }
 }
@@ -188,7 +188,7 @@ function MQTTCmdListener(topic, message) {
 function MQTTCmdListenerSelect(topic, message) {
 
   print("[MQTT] listen SELECT", message);
-  CONFIG.sel_mode = message;
+  STATUS.sel_mode = message;
   if (message === "Auto"){
     print("[MQTT-SELECT] AUTO", message);
     // fonctionnement Automatique normal
@@ -202,7 +202,7 @@ function MQTTCmdListenerSelect(topic, message) {
     do_call(calls);
 
     switchActivate(true,true);
-    
+
   }else if (message === "Force off"){
     print("[MQTT-SELECT] FORCE OFF", message);
     // stop pump & delete schedule
@@ -217,22 +217,20 @@ function MQTTCmdListenerSelect(topic, message) {
 
 
 /**
- * Publish update on switch change
+ * Publish update on switch change on binary sensor
  */
 Shelly.addEventHandler(function (ev_data) {
   if (
     ev_data.component === "switch:0" &&
     typeof ev_data.info.output !== "undefined"
   ) {
-    let _state_str = ev_data.info.output ? "on" : "off";
-    MQTT.publish(buildMQTTStateCmdTopics("switch", "state"), _state_str);
+    let _state_str = ev_data.info.output ? "ON" : "OFF";
+    MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+
   }
 });
 
 function publishState() {
-  //print("[POOL_CALL] get_status publishState");
-  //let ul = unlock;
-  //let toto = "#####ZZZZZ####";
   Shelly.call("Switch.GetStatus", { id: 0 }, function (result) {
     let _sensor = {
       duration: 0,
@@ -253,8 +251,8 @@ function publishState() {
       buildMQTTStateCmdTopics("sensor", "state"),
       JSON.stringify(_sensor)
     );
-    let _state_str = _sensor.state ? "on" : "off";
-    MQTT.publish(buildMQTTStateCmdTopics("switch", "state"), _state_str);
+    let _state_str = _sensor.state ? "ON" : "OFF";
+    MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
 
     MQTT.publish(buildMQTTStateCmdTopics("number", "state"),JSON.stringify(STATUS.coeff));
 
@@ -275,26 +273,26 @@ if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState)
  * Initialize listeners and configure switch and sensors entries
  */
 function initMQTT() {
-  MQTT.subscribe(buildMQTTStateCmdTopics("switch", "cmd"), MQTTCmdListener);
-  /**
-   * Configure the switch
-   */
-  MQTT.publish(
-    buildMQTTConfigTopic("switch", "switch"),
-    JSON.stringify({
-      dev: CONFIG.ha_dev_type,
-      "~": buildMQTTStateCmdTopics("switch"),
-      cmd_t: "~/cmd",
-      stat_t: "~/state",
-      icon: "mdi:pump",
-      pl_on: CONFIG.payloads.on,
-      pl_off: CONFIG.payloads.off,
-      name: "pool pump",
-      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_SW",
-    }),
-    0,
-    true
-  );
+//   MQTT.subscribe(buildMQTTStateCmdTopics("switch", "cmd"), MQTTCmdListener);
+//   /**
+//    * Configure the switch
+//    */
+//   MQTT.publish(
+//     buildMQTTConfigTopic("switch", "switch"),
+//     JSON.stringify({
+//       dev: CONFIG.ha_dev_type,
+//       "~": buildMQTTStateCmdTopics("switch"),
+//       cmd_t: "~/cmd",
+//       stat_t: "~/state",
+//       icon: "mdi:pump",
+//       pl_on: CONFIG.payloads.on,
+//       pl_off: CONFIG.payloads.off,
+//       name: "pool pump",
+//       uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_SW",
+//     }),
+//     0,
+//     true
+//   );
 
   MQTT.subscribe(buildMQTTStateCmdTopics("number", "cmd"), MQTTCmdListenerNumber);
   /**
@@ -336,16 +334,36 @@ function initMQTT() {
       cmd_t: "~/cmd",
       options: options,
       retain: "true",
+      ic: "mdi:cog-play",
+      name: "Running mode",
       uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_selectMode",
     }),
     0,
     true
   );
+  /**
+   * Configure binary_sensor of switch
+   */
+ let binarySensorStateTopic = buildMQTTStateCmdTopics("binary_sensor", "state");
+ MQTT.publish(
+   buildMQTTConfigTopic("binary_sensor", "pump"),
+   JSON.stringify({
+     dev: CONFIG.ha_dev_type,
+     "~": binarySensorStateTopic,
+     stat_t: "~",
+     name: "Pool Pump",
+     device_class: "running",
+     ic: "mdi:pump",
+     uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_pump",
+   }),
+   0,
+   true
+ );
 
 
 
   /**
-   * Configure temperature, current and voltage sensors
+   * Configure  sensors
    */
   let sensorStateTopic = buildMQTTStateCmdTopics("sensor", "state");
   MQTT.publish(
@@ -549,62 +567,68 @@ function update_pump(temp, max, time) {
   STATUS.schedule = schedule;
   let calls = [];
 
-  calls.push({method: "Schedule.DeleteAll", params: null});
+  print("[POOL_MODE] sel_mode: ", STATUS.sel_mode);
+  if (STATUS.sel_mode === "Auto") {
+    calls.push({method: "Schedule.DeleteAll", params: null});
 
-  print("[POOL] update_pump - after schedule:" );
+    print("[POOL] update_pump - after schedule:" );
 
-  let on = true;
-  for (let i = 0; i < schedule.length; i++) {
-    let ts = time_to_timespec(schedule[i]);
-    let p = {
-      id: i+1,
-      enable: true,
-      timespec: ts,
-      calls: [{
-        method: "Switch.Set",
-        params: { id: 0, on: on }
-      }]
-    };
-    calls.push({method: "Schedule.Create", params: p});
-    on = !on;
+    let on = true;
+    for (let i = 0; i < schedule.length; i++) {
+      let ts = time_to_timespec(schedule[i]);
+      let p = {
+        id: i+1,
+        enable: true,
+        timespec: ts,
+        calls: [{
+          method: "Switch.Set",
+          params: { id: 0, on: on }
+        }]
+      };
+      calls.push({method: "Schedule.Create", params: p});
+      on = !on;
+    }
+
+    // // compute the current switch state according to the schedule
+    // on = false;
+    // let j = false;
+    // for (let i = 0; i < schedule.length; i++) {
+    //   j = !j;
+    //   print("[POOL SWITCH] time:", time ,"schedule[i]");
+    //   if (time >= schedule[i])
+        
+    //     on = j;
+    // }
+    // print("[POOL SWITCH] time:", time ,"");
+
+    // calls.push({method: "Switch.Set", params: {id: 0, on: on}});
+  
+    compute_switch_from_schedule();
+
+    do_call(calls);
   }
-
-  // // compute the current switch state according to the schedule
-  // on = false;
-  // let j = false;
-  // for (let i = 0; i < schedule.length; i++) {
-  //   j = !j;
-  //   print("[POOL SWITCH] time:", time ,"schedule[i]");
-  //   if (time >= schedule[i])
-      
-  //     on = j;
-  // }
-  // print("[POOL SWITCH] time:", time ,"");
-
-  // calls.push({method: "Switch.Set", params: {id: 0, on: on}});
-  compute_switch_from_schedule();
-
-  do_call(calls);
 }
 
 function compute_switch_from_schedule(){
 
-  // compute the current switch state according to the schedule
-  STATUS.schedule = schedule;
-  STATUS.update_time = time;
-  on = false;
-  let j = false;
-  for (let i = 0; i < schedule.length; i++) {
-    j = !j;
-    print("[POOL SWITCH] time:", time ,"schedule[i]");
-    if (time >= schedule[i])
-      on = j;
-  }
-  print("[POOL SWITCH] time:", time ,"");
+  if (STATUS.sel_mode === "Auto"){
+    // compute the current switch state according to the schedule
+    STATUS.schedule = schedule;
+    STATUS.update_time = time;
+    on = false;
+    let j = false;
+    for (let i = 0; i < schedule.length; i++) {
+      j = !j;
+      print("[POOL SWITCH] time:", time ,"schedule[i]");
+      if (time >= schedule[i])
+        on = j;
+    }
+    print("[POOL SWITCH] time:", time ,"");
 
-  calls.push({method: "Switch.Set", params: {id: 0, on: on}});
+    calls.push({method: "Switch.Set", params: {id: 0, on: on}});
 
-  do_call(calls);
+    do_call(calls);
+}
 
 }
 
@@ -620,13 +644,13 @@ function update_pump_hivernage(){
   
 }
 
-// update temperature from Sensor
-// - update max temp
-// - retrieve current time
-// - switch to new day
-// - do a pump update if the last one didn't happen too close and if max temp has changed
+
 /**
- * Listen to ~/cmd topic for number control Coefficient filtrage
+ * Update temperature from Sensor
+ * - update max temp
+ * - retrieve current time
+ * - switch to new day
+ * - do a pump update if the last one didn't happen too close and if max temp has changed
  * @param {boolean} fromUpdateCoeff
  * @param {boolean} nodisable
  */
@@ -635,7 +659,8 @@ function update_temp(fromUpdateCoeff, nodisable) {
 
   print("[POOL] update_temp", STATUS.tick_temp, STATUS.current_temp);
 
-  if ((STATUS.disable_temp !== null) || ( nodisable !== true)) {
+  print("[POOL_DISABLE_TEMP] disable_temp", STATUS.disable_temp, nodisable);
+  if ((STATUS.disable_temp !== null) && ( nodisable !== true)) {
     print("[POOL] update disabled");
     return;
   }
@@ -748,7 +773,7 @@ MQTT.subscribe(
     update_next_noon(obj.next_noon);
     STATUS.current_temp = obj.temperature;
     STATUS.temp_ext = obj.temperature_ext;
-    update_temp();
+    update_temp(false,false);
   }
 )
 
