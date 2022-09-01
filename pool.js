@@ -64,7 +64,7 @@ let STATUS = {
     on: "on",
     off: "off",
   },
-  update_period: 2500,
+  update_period: 60000,
 };
 
 //print("[POOL_CALL] get_deviceinfo at start");
@@ -231,6 +231,8 @@ Shelly.addEventHandler(function (ev_data) {
 });
 
 function publishState() {
+  // get time and update_newday
+  get_current_time();
   Shelly.call("Switch.GetStatus", { id: 0 }, function (result) {
     let _sensor = {
       duration: 0,
@@ -518,13 +520,16 @@ function time_to_timespec(t) {
 }
 
 // new day, update status
-function update_new_day() {
-  STATUS.tick_day++;
-  print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
-  //STATUS.temp_yesterday = STATUS.temp_max;
-  STATUS.temp_yesterday = STATUS.temp_today;
-  STATUS.temp_today = null;
-}
+// function update_new_day() {
+  
+//   STATUS.tick_day++;
+//   print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
+//   //STATUS.temp_yesterday = STATUS.temp_max;
+//   STATUS.temp_yesterday = STATUS.temp_today;
+//   STATUS.temp_today = null;
+//   STATUS.update_time = t
+
+// }
 
 // call a chain of API calls
 function do_call(calls) {
@@ -689,7 +694,7 @@ function update_temp(fromUpdateCoeff, nodisable) {
         update_temp_call();
 
   }else if( (STATUS.sel_mode === "Force on") || (STATUS.sel_mode === "Force off")){
-    return 0;
+    return;
   }else {
     print("[POOL] no temp change, skip update_pump");
     STATUS.lock_update = false;
@@ -710,8 +715,15 @@ function get_current_time(){
 
   print("[POOL_CURRENT_TIME] current_time:", t);
   print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " < update_time:", STATUS.update_time);
-  if (t < STATUS.update_time)
-    update_new_day();
+  if (t < STATUS.update_time){
+    // update_new_day();
+    STATUS.tick_day++;
+    print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
+    //STATUS.temp_yesterday = STATUS.temp_max;
+    STATUS.temp_yesterday = STATUS.temp_today;
+    STATUS.temp_today = null;
+    STATUS.update_time = t
+  }
 
   STATUS.current_time = t;
 
