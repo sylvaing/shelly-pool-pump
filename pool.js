@@ -680,7 +680,7 @@ function update_temp(fromUpdateCoeff, nodisable) {
   STATUS.temp_today = Math.max(STATUS.temp_today, STATUS.temp);
   STATUS.temp_max   = Math.max(STATUS.temp_today, STATUS.temp_yesterday);
 
-  print("[POOL] update_temp - max:", STATUS.temp_max, "today:", STATUS.temp_today, "yesterday:", STATUS.temp_yesterday);
+  print("[POOL] update_temp - max today:", STATUS.temp_max, "today:", STATUS.temp_today, "yesterday:", STATUS.temp_yesterday);
   print("[POOL] update_temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last, "temp_ext:", STATUS.temp_ext);
 
   get_current_time();
@@ -713,9 +713,9 @@ function get_current_time(){
   // compute current time in float format (12h45 -> 12.75)
   let t = JSON.parse(time.slice(0,2)) + JSON.parse(time.slice(3,5)) / 60;
 
-  print("[POOL_CURRENT_TIME] current_time:", t);
-  print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " < update_time:", STATUS.update_time);
-  if (t < STATUS.update_time){
+  //print("[POOL_CURRENT_TIME] current_time:", t);
+  print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
+  if (t <= STATUS.update_time){
     // update_new_day();
     STATUS.tick_day++;
     print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
