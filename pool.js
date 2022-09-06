@@ -122,6 +122,9 @@ function switchActivate(sw_state, nolock) {
     id: 0,
     on: sw_state,
   });
+  
+  //let _state_str = sw_state ? "ON" : "OFF";
+  //MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
 
   if ( nolock !== true ){
     STATUS.tick_lock++;
@@ -130,7 +133,7 @@ function switchActivate(sw_state, nolock) {
     if (STATUS.disable_temp !== null)
       Timer.clear(STATUS.disable_temp);
 
-    print("[POOL_DISABLE_TEMP] disable temp", STATUS.tick_lock);
+    print("[POOL_DISABLE_TEMP] switchActivate() disable temp", STATUS.tick_lock);
 
     STATUS.disable_temp = Timer.set(
       6 * 100,
@@ -161,14 +164,16 @@ function switchActivate(sw_state, nolock) {
  */
  function MQTTCmdListenerNumber(topic, message) {
   if (STATUS.lock_update === false){
+  print("[POOL] - MQTT listenerNumber() lock_update =  false");
+
 
   print("[MQTT] listen Number", message);
   let obj = JSON.parse(message);
-  print("[MQTT-LISTEN] listen Number - STATUS.coeff", obj);
+ // print("[MQTT-LISTEN] listen Number - STATUS.coeff", obj);
   // if (obj !== STATUS.coeff){
     STATUS.coeff = obj;
     MQTT.publish(buildMQTTStateCmdTopics("number", "state"), JSON.stringify(STATUS.coeff));
-    print("[MQTT] listen Number - STATUS.coeff", STATUS.coeff);
+    //print("[MQTT] listen Number - STATUS.coeff", STATUS.coeff);
     // let _obj = {
     //   coeff_filt : STATUS.coeff,
     //   next_noon : STATUS.next_noon,
@@ -176,7 +181,11 @@ function switchActivate(sw_state, nolock) {
     //   temperature_ext : STATUS.temp_ext,
     // };
       update_temp(true,false);
+    }else{
+      print("[POOL] - MQTT listener lock_update =  true");
     }
+    // a tester..
+    publishState();
   // }
 }
 
@@ -212,6 +221,7 @@ function MQTTCmdListenerSelect(topic, message) {
 
     switchActivate(false,true);
   }
+  
 
 }
 
@@ -231,9 +241,16 @@ Shelly.addEventHandler(function (ev_data) {
 });
 
 function publishState() {
-  // get time and update_newday
-  get_current_time();
-  Shelly.call("Switch.GetStatus", { id: 0 }, function (result) {
+  //update_newday
+  //get_current_time();
+
+
+  // use getComponentStatus (sync call) instead of call of "Sys.GetStatus" ( async call)
+  let result = Shelly.getComponentStatus("switch",0); 
+  print("[POOL_] GETCOMPONENT-STATUS SWITCH :", result.output);
+
+
+  //Shelly.call("Switch.GetStatus", { id: 0 }, function (result) {
     let _sensor = {
       duration: 0,
       start: 0,
@@ -261,15 +278,20 @@ function publishState() {
     if (STATUS.make_unlock){
       STATUS.lock_update = false;
       STATUS.make_unlock = false;
+      print("[POOL] - Publish state lock_update => false");
+    }else{
+      print("[POOL] - Publishstate() make_unlock =  true , lock_update = ", STATUS.lock_update );
     }
 
-  });
+  //});
 }
 
 /**
  * Activate periodic updates
  */
 if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState);
+//========>>
+
 
 /**
  * Initialize listeners and configure switch and sensors entries
@@ -489,10 +511,10 @@ function compute_duration_filt_abacus(t){
 
 function update_next_noon(d){
   // il faut aller chercher la valeur de HA sun.sun next_noon et ensuite la convertir
-  print("[POOL_NEXT_NOON] date pivot", d);
+  //print("[POOL_NEXT_NOON] date pivot", d);
   let new_d = JSON.parse(d.slice(0,2)) + JSON.parse(d.slice(3,5)) / 60;
   STATUS.next_noon = new_d;
-  print("[POOL_NEXT_NOON] new_date pivot", new_d);
+  //print("[POOL_NEXT_NOON] new_date pivot", new_d);
 }
 
 // compute the pump schedule for a given duration
@@ -519,17 +541,22 @@ function time_to_timespec(t) {
   return ts;
 }
 
-// new day, update status
-// function update_new_day() {
+//new day, update status
+function update_new_day() {
   
-//   STATUS.tick_day++;
-//   print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
-//   //STATUS.temp_yesterday = STATUS.temp_max;
-//   STATUS.temp_yesterday = STATUS.temp_today;
-//   STATUS.temp_today = null;
-//   STATUS.update_time = t
+  t = get_current_time();
+  
+  print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
+  if (t <= STATUS.update_time){
+  STATUS.tick_day++;
+  print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
+  //STATUS.temp_yesterday = STATUS.temp_max;
+  STATUS.temp_yesterday = STATUS.temp_today;
+  STATUS.temp_today = null;
+  STATUS.update_time = t
+  }
 
-// }
+}
 
 // call a chain of API calls
 function do_call(calls) {
@@ -614,12 +641,13 @@ function update_pump(temp, max, time) {
   }
 }
 
+// TODO : fix time & schedule whici seems empty;
 function compute_switch_from_schedule(){
 
   if (STATUS.sel_mode === "Auto"){
     // compute the current switch state according to the schedule
-    STATUS.schedule = schedule;
-    STATUS.update_time = time;
+    //STATUS.schedule = schedule;
+    //STATUS.update_time = time;
     on = false;
     let j = false;
     for (let i = 0; i < schedule.length; i++) {
@@ -631,10 +659,10 @@ function compute_switch_from_schedule(){
     print("[POOL SWITCH] time:", time ,"");
 
     calls.push({method: "Switch.Set", params: {id: 0, on: on}});
-
     do_call(calls);
-}
-
+    let _state_str = on ? "ON" : "OFF";
+    MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+  }
 }
 
 function update_pump_hivernage(){
@@ -674,6 +702,7 @@ function update_temp(fromUpdateCoeff, nodisable) {
     print("[POOL] update_temp locked");
     return;
   }
+  print("[POOL] update_temp() lock_update =>  true");
   STATUS.lock_update = true;
 
   STATUS.temp = Math.round(STATUS.current_temp * 10) / 10;
@@ -683,7 +712,7 @@ function update_temp(fromUpdateCoeff, nodisable) {
   print("[POOL] update_temp - max today:", STATUS.temp_max, "today:", STATUS.temp_today, "yesterday:", STATUS.temp_yesterday);
   print("[POOL] update_temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last, "temp_ext:", STATUS.temp_ext);
 
-  get_current_time();
+  STATUS.current_time = get_current_time();
   
   if ((STATUS.temp_max !== STATUS.update_temp_max_last) ||
       (STATUS.temp_ext < 2 ) ||
@@ -696,7 +725,7 @@ function update_temp(fromUpdateCoeff, nodisable) {
   }else if( (STATUS.sel_mode === "Force on") || (STATUS.sel_mode === "Force off")){
     return;
   }else {
-    print("[POOL] no temp change, skip update_pump");
+    print("[POOL] no temp change, skip update_pump, lock_update =  false");
     STATUS.lock_update = false;
   }
 }
@@ -706,7 +735,7 @@ function get_current_time(){
 
   // use getComponentStatus (sync call) instead of call of "Sys.GetStatus" ( async call)
   let result = Shelly.getComponentStatus("sys"); 
-  print("[POOL_COMPONENT] time:", result.time);
+  print("[POOL_] get_current_time() time:", result.time);
   
   let time = result.time; // "HH:MM"
 
@@ -714,20 +743,22 @@ function get_current_time(){
   let t = JSON.parse(time.slice(0,2)) + JSON.parse(time.slice(3,5)) / 60;
 
   //print("[POOL_CURRENT_TIME] current_time:", t);
-  print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
-  if (t <= STATUS.update_time){
-    // update_new_day();
-    STATUS.tick_day++;
-    print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
-    //STATUS.temp_yesterday = STATUS.temp_max;
-    STATUS.temp_yesterday = STATUS.temp_today;
-    STATUS.temp_today = null;
-    STATUS.update_time = t
-  }
+  //print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
+  // if (t <= STATUS.update_time){
+  //   // update_new_day();
+  //   STATUS.tick_day++;
+  //   print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
+  //   //STATUS.temp_yesterday = STATUS.temp_max;
+  //   STATUS.temp_yesterday = STATUS.temp_today;
+  //   STATUS.temp_today = null;
+  //   STATUS.update_time = t
+  // }
 
-  STATUS.current_time = t;
+  //STATUS.current_time = t;
 
+  return t;
 }
+
 
 function update_temp_call(){
 
@@ -815,25 +846,48 @@ MQTT.subscribe(
 //   }
 // );
 
-// Debug...
+Shelly.addEventHandler(
+  function (data) {
+    if (data.info.event === "toggle"){
 
-Timer.set(
-  60 * 1000,
-  true,
-  function() {
-    STATUS.tick++;
-    Shelly.call (
-      "Sys.GetStatus",
-      {},
-      function (result) {
-        //print("[POOL] DEBUG time : ", result.time, ", update_time : " STATUS.update_time, " , uptime : ", result.uptime);
-        print("[POOL] DEBUG temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
-        //print("[POOL] DEBUG temp - temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
+      let result = Shelly.getComponentStatus("switch",0); 
+      print("[POOL_] GETCOMPONENT-STATUS SWITCH :", result.output);
 
-        STATUS.time = result.time;
-        STATUS.uptime = result.uptime;
-      }
-    );
+      let _state_str = result.output ? "ON" : "OFF";
+      MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+
+
+    }
   }
 );
+
+
+// Debug...
+
+
+/**
+ * Activate periodic check for new day
+ */
+ Timer.set(300000, true, update_new_day);
+
+
+// Timer.set(
+//   60 * 1000,
+//   true,
+//   function() {
+//     STATUS.tick++;
+//     Shelly.call (
+//       "Sys.GetStatus",
+//       {},
+//       function (result) {
+//         //print("[POOL] DEBUG time : ", result.time, ", update_time : " STATUS.update_time, " , uptime : ", result.uptime);
+//         print("[POOL] DEBUG temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
+//         //print("[POOL] DEBUG temp - temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
+
+//         STATUS.time = result.time;
+//         STATUS.uptime = result.uptime;
+//       }
+//     );
+//   }
+// );
 
