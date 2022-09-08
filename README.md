@@ -3,6 +3,9 @@ Automatic schedule of your pool pump with temperature and freeze mode
 
 This script is intended to  manage your pool pump from a Shelly Plus device.
 He is compatible from firmware 0.11
+
+The goal of this script is to make independant filtration system with just monitor and action with your home automation system.
+If there is an issue ( your HA, network, .. ) Shelly device can continu to manage your filtration to have clear water :-)
  
 Based on shelly script of ggilles with lot of new feature and improvment.
 https://www.shelly-support.eu/forum/index.php?thread/14810-script-randomly-killed-on-shelly-plus-1pm/
@@ -35,6 +38,18 @@ You have au slider to configure the factor of duration filtration, if you want a
 * customize duration with coefficient of duration
 * choose manually to select Force On or off filtration or choose to use the "IA" :-) of script to manage your pump with Auto mode.
 
+
+## Configuration of HA:
+
+* you must have
+    * sun integration in your ha to provide sun.next_noon
+    * temperature sensor of your water. I use DS18b20 with an shelly on for me, but you can use what you want
+    * external temperature sensor in order to detect risk of water freeze
+
+* add an automation:
+I publish my file pool_pump.yaml for use with package or rewrite automation as you want.
+You mus have an automation which published all necessary temp sensors and sun.next_noon
+
 ## Connect shelly to your filtration pump system
 
 The shelly hardware (for me shelly 1 plus) mus replace your hardware clock in your electic panel.
@@ -45,7 +60,7 @@ So ! if you unerstand you cant's use shelly plus 1PM to monitor energy, because 
 
 
 ## TODO
-* When Schelly addon temperature will be avaible use this to not user sensor of external hardware
+* When Shelly addon temperature will be avaible use this to not user sensor of external hardware and make shelly really autonomous if issue on HA or network
 * I wouldlike use Home assitant PI to request directly HA by API, in order to not configure AUtomation to publish some infortaions,
 but the lenght of the token is too loong for shelly script. Perhaps in the futur..
 * improve the doc to connect shelly with your hardware.
