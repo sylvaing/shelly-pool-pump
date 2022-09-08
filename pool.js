@@ -1,3 +1,30 @@
+/**
+ * garcia.sylvain@gmail.com
+ * https://github.com/sylvaing/shelly-pool-pump
+ * 
+ * This script is intended to  manage your pool pump from a Shelly Plus device.
+ * He is compatible from firmware 0.11
+ * 
+ * Based on shelly script of ggilles with lot of new feature and improvment.
+ * https://www.shelly-support.eu/forum/index.php?thread/14810-script-randomly-killed-on-shelly-plus-1pm/
+ * 
+ * Calculate duration filter from current temperature of water, and use max temp of the day and yesterday. The script use sun noon
+ * to calculate the start of script and the end. the morning and the afternoon are separate by sun noon, and duration are equal.
+ * manage freeze mode : under 2°C pump will be activate to prevent freeze of water.
+ * 
+ * Publish informations on MQTT for Home Assistant autodiscover, all sensors and switch are autocreate in your home assitant.
+ * Before use the script you must configure correcly your Shelly device to connect a your MQTT broker trought web interface or shelly app.
+ * 
+ * Today, there are no native external sensor, so you must publish temp of water and external temperature on one MQTT topic "ha/pool/...". you have
+ * configuration package 'pool_pum.yaml' to do this, replace and addapt tou your sensor and configuration.
+ * 
+ * You must also publish th next_noon on the same topic, to calulate the middle of duration filtration
+ * 
+ * You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, put you can choose what you want.
+ *
+ */
+
+
 print("[POOL] start");
 
 let STATUS = {
@@ -38,9 +65,6 @@ let STATUS = {
   tick_day: 0,
 };
 
-////////////
-//MQTT
-
 
 /**
  * @typedef {"switch" | "binary_sensor" | "sensor"} HADeviceType
@@ -67,7 +91,6 @@ let STATUS = {
   update_period: 60000,
 };
 
-//print("[POOL_CALL] get_deviceinfo at start");
 Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
   CONFIG.shelly_id = result.id;
   CONFIG.shelly_mac = result.mac;
@@ -123,9 +146,6 @@ function switchActivate(sw_state, nolock) {
     on: sw_state,
   });
   
-  //let _state_str = sw_state ? "ON" : "OFF";
-  //MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
-
   if ( nolock !== true ){
     STATUS.tick_lock++;
     print("[POOL] disable temp", STATUS.tick_lock);
