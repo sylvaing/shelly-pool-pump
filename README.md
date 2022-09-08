@@ -48,22 +48,27 @@ You have au slider to configure the factor of duration filtration, if you want a
 
 * add an automation:
 I publish my file pool_pump.yaml for use with package or rewrite automation as you want.
-You mus have an automation which published all necessary temp sensors and sun.next_noon
+You must have an automation which published all necessary temp sensors and sun.next_noon
 
 ## Connect shelly to your filtration pump system
 
 The shelly hardware (for me shelly 1 plus) mus replace your hardware clock in your electic panel.
-But, be careful, you don't just use your shelly schema like for a light. There pic of current at start of pump so your shelly can have some problem and fire if you do that.
-In theory Your old hardware clock is connected to a relay. your shelly must make order to the relay to turn on/off the pump, not your shelly !!
-So ! if you unerstand you cant's use shelly plus 1PM to monitor energy, because it must be conneected in direct. I suggest you to use Shelly EM with clamps to monitor energy.
+**But, be careful, _you don't use_ your shelly schema like for a light.**
+There are pic of current at start of the pump so your shelly can have some problem (reboot) and/or fire if you do that.
+
+In theory your old hardware clock is connected to a relay. your shelly must make order to the relay to turn on/off the pump,
+**not your shelly !!** 
+
+*So ! if you unerstand you cant's use shelly plus 1PM to monitor energy, because it must be conneected in direct. I suggest you to use Shelly EM with clamps to monitor energy.*
 
 
 
 ## TODO
-* When Shelly addon temperature will be avaible use this to not user sensor of external hardware and make shelly really autonomous if issue on HA or network
-* I wouldlike use Home assitant PI to request directly HA by API, in order to not configure AUtomation to publish some infortaions,
-but the lenght of the token is too loong for shelly script. Perhaps in the futur..
+* When Shelly addon temperature will be avaible use this to not use external sensor hardware and make shelly really autonomous if issue on HA or network
+* I wouldlike use Home assitant API to request directly HA by API in order to not configure Automation to publish some informations,
+but the lenght of the token is too long for shelly script. Perhaps in the futur..
 * improve the doc to connect shelly with your hardware.
+* ...
 
 
 
