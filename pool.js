@@ -256,10 +256,14 @@ function publishState() {
       start: 0,
       stop: 0,
       mode: "null",
+      temp_max : 0,
+      temp_max_yesterday: 0,
     };
     _sensor.duration = STATUS.duration;
     _sensor.start = STATUS.start;
     _sensor.stop = STATUS.stop;
+    _sensor.temp_max = STATUS.temp_max
+    _sensor.temp_max_yesterday = STATUS.temp_max_yesterday
     if (STATUS.freeze_mode === true){
       _sensor.mode = 'freeze';
     }else{
@@ -452,6 +456,39 @@ function initMQTT() {
     0,
     true
   );
+
+  //temperature max between today and yesterday use for calculate duration
+  MQTT.publish(
+    buildMQTTConfigTopic("sensor", "temp_max"),
+    JSON.stringify({
+      dev: CONFIG.ha_dev_type,
+      "~": sensorStateTopic,
+      stat_t: "~",
+      val_tpl: "{{ value_json.temp_max }}",
+      name: "Temperature max",
+      device_class: "temperature",
+      unit_of_measurement: "°C",
+      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max",
+    }),
+    0,
+    true
+  );
+    //temperature max yesterday
+    MQTT.publish(
+      buildMQTTConfigTopic("sensor", "temp_max_yesterday"),
+      JSON.stringify({
+        dev: CONFIG.ha_dev_type,
+        "~": sensorStateTopic,
+        stat_t: "~",
+        val_tpl: "{{ value_json.temp_max_yesterday }}",
+        name: "Temperature yesterday",
+        device_class: "temperature",
+        unit_of_measurement: "°C",
+        uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max_yesterday",
+      }),
+      0,
+      true
+    );
 }
 
 
@@ -544,7 +581,7 @@ function time_to_timespec(t) {
 //new day, update status
 function update_new_day() {
   
-  t = get_current_time();
+  let t = get_current_time();
   
   print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
   if (t <= STATUS.update_time){
