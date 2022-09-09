@@ -33,7 +33,7 @@ let STATUS = {
   temp_ext:null,
   temp_max: null,
   temp_today: null,
-  temp_yesterday: null,
+  temp_yesterday: 0,
   next_noon: 12,
   freeze_mode: false,
   coeff: 1.2,
@@ -283,7 +283,7 @@ function publishState() {
     _sensor.start = STATUS.start;
     _sensor.stop = STATUS.stop;
     _sensor.temp_max = STATUS.temp_max
-    _sensor.temp_max_yesterday = STATUS.temp_max_yesterday
+    _sensor.temp_max_yesterday = STATUS.temp_yesterday
     if (STATUS.freeze_mode === true){
       _sensor.mode = 'freeze';
     }else{
@@ -485,7 +485,7 @@ function initMQTT() {
       "~": sensorStateTopic,
       stat_t: "~",
       val_tpl: "{{ value_json.temp_max }}",
-      name: "Temperature max",
+      name: "Max",
       device_class: "temperature",
       unit_of_measurement: "°C",
       uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max",
@@ -501,7 +501,7 @@ function initMQTT() {
         "~": sensorStateTopic,
         stat_t: "~",
         val_tpl: "{{ value_json.temp_max_yesterday }}",
-        name: "Temperature yesterday",
+        name: "Yesterday",
         device_class: "temperature",
         unit_of_measurement: "°C",
         uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max_yesterday",
