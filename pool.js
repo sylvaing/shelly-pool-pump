@@ -819,7 +819,7 @@ Shelly.addEventHandler(
 /**
  * Activate periodic check for new day
  */
- Timer.set(300000, true, update_new_day);
+ Timer.set(600000, true, update_new_day);
 
 // Debug...
 
