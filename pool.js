@@ -28,21 +28,21 @@
 print("[POOL] start");
 
 let STATUS = {
-  temp: null,
-  current_temp: null,
-  temp_ext:null,
-  temp_max: null,
-  temp_today: null,
-  temp_yesterday: null,
+  temp: 0,
+  current_temp: 0,
+  temp_ext: 0,
+  temp_max: 0,
+  temp_today: 0,
+  temp_yesterday: 0,
   next_noon: 12,
   freeze_mode: false,
   coeff: 1.2,
   sel_mode: "Force off",
 
-  update_time: null,
+  update_time: 0,
   update_time_last: 0,
-  update_temp_max_last: null,
-  current_time: null,
+  update_temp_max_last: 0,
+  current_time: 0,
 
   disable_temp: null,
   lock_update: false,
@@ -603,7 +603,9 @@ function update_new_day() {
   
   let t = get_current_time();
   
-  print("[POOL_CURRENT_TIME] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
+  print("[POOL] [NEW_DAY] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
+  print("[POOL] [NEW_DAY] temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
+
   if (t <= STATUS.update_time){
   STATUS.tick_day++;
   print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
@@ -788,13 +790,22 @@ function update_temp(fromUpdateCoeff, nodisable) {
 }
 
 function get_current_time(){
-  // print("[POOL_CALL] get_status current time");
+  print("[POOL] get_status current time");
+  
+  let result = null;
+  let i = 1;
 
-  // use getComponentStatus (sync call) instead of call of "Sys.GetStatus" ( async call)
-  let result = Shelly.getComponentStatus("sys"); 
-  print("[POOL_] get_current_time() time:", result.time);
+  while (result === null || result === "null" ){
+    // use getComponentStatus (sync call) instead of call of "Sys.GetStatus" ( async call)
+    result = Shelly.getComponentStatus("sys"); 
+    print("[POOL] get_status tick: ", i);
+    i++;
+  }
+
+  print("[POOL] get_current_time() time:", result.time);
   
   let time = result.time; // "HH:MM"
+  
 
   // compute current time in float format (12h45 -> 12.75)
   let t = JSON.parse(time.slice(0,2)) + JSON.parse(time.slice(3,5)) / 60;
@@ -924,8 +935,9 @@ Shelly.addEventHandler(
 
 /**
  * Activate periodic check for new day
+ * 300000 = 5min
  */
- Timer.set(300000, true, update_new_day);
+ Timer.set(600000, true, update_new_day);
 
 
 // Timer.set(
