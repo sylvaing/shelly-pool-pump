@@ -801,14 +801,18 @@ MQTT.subscribe(
   function (topic, msg) {
     STATUS.tick_mqtt++;
     print("[POOL] mqtt", topic);
-    let obj = JSON.parse(msg);
-    if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) )  {
+    let obj = null ;
+    if (obj = JSON.parse(msg)){
+      if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) )  {
+        return;
+      }
+      update_next_noon(obj.next_noon);
+      STATUS.current_temp = obj.temperature;
+      STATUS.temp_ext = obj.temperature_ext;
+      update_temp(false,false);
+    }else{
       return;
     }
-    update_next_noon(obj.next_noon);
-    STATUS.current_temp = obj.temperature;
-    STATUS.temp_ext = obj.temperature_ext;
-    update_temp(false,false);
   }
 )
 
