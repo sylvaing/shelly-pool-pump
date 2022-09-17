@@ -156,8 +156,8 @@ function switchActivate(sw_state, nolock) {
     print("[POOL_DISABLE_TEMP] switchActivate() disable temp", STATUS.tick_lock);
 
     STATUS.disable_temp = Timer.set(
-      6 * 100,
-      //600 * 1000,
+      //6 * 100,
+      600 * 1000,
       false,
       function () {
         print("[POOL] re-enable temp");
@@ -559,10 +559,10 @@ function update_new_day() {
   
   let t = get_current_time();
   
-  print("[POOL] [NEW_DAY] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
+  print("[POOL] [NEW_DAY] update_new_day debug IF - current_time:", t, " < update_time:", STATUS.update_time);
   print("[POOL] [NEW_DAY] temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
 
-  if (t <= STATUS.update_time){
+  if (t < STATUS.update_time){
     STATUS.tick_day++;
     print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
     //STATUS.temp_yesterday = STATUS.temp_max;
@@ -730,10 +730,12 @@ function update_temp(fromUpdateCoeff, nodisable) {
 function get_current_time(){
   print("[POOL] get_status current time");
   
-  let result = null;
+  let result = {
+    time: null,
+  };
   let i = 1;
 
-  while (result === null || result === "null" ){
+  while (result.time === null ){
     // use getComponentStatus (sync call) instead of call of "Sys.GetStatus" ( async call)
     result = Shelly.getComponentStatus("sys"); 
     print("[POOL] get_status tick: ", i);
