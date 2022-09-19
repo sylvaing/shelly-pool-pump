@@ -535,7 +535,8 @@ function update_next_noon(d){
 // [ start1, stop1, start2, stop2, ... ]
 function compute_schedule_filt_pivot(d) {
   let s = null;
-  let matin = Math.round(d)/2;
+  //let matin = Math.round(d)/2;
+  let matin = d/2;
   let aprem = d - matin;
   s = [ STATUS.next_noon - matin, STATUS.next_noon + aprem ];
 
@@ -803,6 +804,7 @@ MQTT.subscribe(
   function (topic, msg) {
     STATUS.tick_mqtt++;
     print("[POOL] mqtt", topic);
+    print("[POOL] MQTT", msg);
     let obj = null ;
     if (obj = JSON.parse(msg)){
       if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) )  {
