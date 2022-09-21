@@ -560,10 +560,10 @@ function update_new_day() {
   
   let t = get_current_time();
   
-  print("[POOL] [NEW_DAY] update_new_day debug IF - current_time:", t, " < update_time:", STATUS.update_time);
+  print("[POOL] [NEW_DAY] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
   print("[POOL] [NEW_DAY] temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
 
-  if (t < STATUS.update_time){
+  if (t <= STATUS.update_time){
     STATUS.tick_day++;
     print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
     //STATUS.temp_yesterday = STATUS.temp_max;
