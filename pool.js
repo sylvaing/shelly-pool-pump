@@ -183,8 +183,9 @@ function switchActivate(sw_state, nolock) {
  * @param {string} message
  */
  function MQTTCmdListenerNumber(topic, message) {
+  print("[MQTT] listen NUMBER : ", message);
   if (STATUS.lock_update === false){
-    //print("[POOL] - MQTT listenerNumber() lock_update =  false");
+    print("[POOL] - MQTT listenerNumber() lock_update =  false");
     //print("[MQTT] listen Number", message);
     let obj = JSON.parse(message);
 
@@ -283,7 +284,7 @@ function publishState() {
   if (STATUS.make_unlock){
     STATUS.lock_update = false;
     STATUS.make_unlock = false;
-    //print("[POOL] - Publish state lock_update => false");
+    print("[POOL] - make_unlock - Publish state lock_update => false");
   }
 
   
@@ -477,19 +478,19 @@ function initMQTT() {
 // duration is returned in float format (1.25 -> 1h 15mn)
 function compute_duration_filt(t) {
   if (t < 5)
-    return 1;
+    return 1* STATUS.coeff;
   if (t < 10)
-    return (t/5);           // 1 -> 2
+    return (t/5* STATUS.coeff);           // 1 -> 2
   if (t < 12)
-    return (t-8);           // 2 -> 4
+    return (t-8* STATUS.coeff);           // 2 -> 4
   if (t < 16)
-    return (t/2-2);         // 4 -> 6
+    return (t/2-2* STATUS.coeff);         // 4 -> 6
   if (t < 24)
-    return (t/4+2);         // 6 -> 8
+    return (t/4+2* STATUS.coeff);         // 6 -> 8
   if (t < 27)
-    return (t*4/3-24)       // 8 -> 12
+    return (t*4/3-24* STATUS.coeff)       // 8 -> 12
   if (t < 30)
-    return (t*4 - 96);      // 12 -> 24
+    return (t*4 - 96* STATUS.coeff);      // 12 -> 24
   return 24;
 }
 
@@ -603,7 +604,7 @@ function update_pump(temp, max, time) {
   STATUS.tick_pump++;
   print("[POOL] update_pump", STATUS.tick_pump, "- temp:", temp, "max:", max, "time:", time);
 
-  let duration_abacus = compute_duration_filt_abacus(max);
+  let duration_abacus = compute_duration_filt(max);
   let schedule = compute_schedule_filt_pivot(duration_abacus);
 
   print("[POOL] update_pump - duration abacus:", duration_abacus);
@@ -700,7 +701,7 @@ function update_temp(fromUpdateCoeff, nodisable) {
     print("[POOL] update_temp locked");
     return;
   }
-  print("[POOL] update_temp() lock_update =>  true");
+  print("[POOL] update_temp() published lock_update =>  true");
   STATUS.lock_update = true;
 
   STATUS.temp = Math.round(STATUS.current_temp * 10) / 10;
@@ -721,9 +722,11 @@ function update_temp(fromUpdateCoeff, nodisable) {
         update_temp_call();
 
   }else if( (STATUS.sel_mode === "Force on") || (STATUS.sel_mode === "Force off")){
+    print("[POOL] Force ON or Off, lock_update =>  false");
+    STATUS.lock_update = false;
     return;
   }else {
-    print("[POOL] no temp change, skip update_pump, lock_update =  false");
+    print("[POOL] no temp change, skip update_pump, lock_update =>  false");
     STATUS.lock_update = false;
   }
 }
