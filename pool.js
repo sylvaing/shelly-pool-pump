@@ -480,17 +480,17 @@ function compute_duration_filt(t) {
   if (t < 5)
     return 1* STATUS.coeff;
   if (t < 10)
-    return (t/5* STATUS.coeff);           // 1 -> 2
+    return ((t/5)* STATUS.coeff);           // 1 -> 2
   if (t < 12)
-    return (t-8* STATUS.coeff);           // 2 -> 4
+    return ((t-8)* STATUS.coeff);           // 2 -> 4
   if (t < 16)
-    return (t/2-2* STATUS.coeff);         // 4 -> 6
+    return ((t/2-2)* STATUS.coeff);         // 4 -> 6
   if (t < 24)
-    return (t/4+2* STATUS.coeff);         // 6 -> 8
+    return ((t/4+2)* STATUS.coeff);         // 6 -> 8
   if (t < 27)
-    return (t*4/3-24* STATUS.coeff)       // 8 -> 12
+    return ((t*4/3-24)* STATUS.coeff)       // 8 -> 12
   if (t < 30)
-    return (t*4 - 96* STATUS.coeff);      // 12 -> 24
+    return ((t*4 - 96)* STATUS.coeff);      // 12 -> 24
   return 24;
 }
 
