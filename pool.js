@@ -687,6 +687,14 @@ function update_pump_hivernage(){
  * @param {boolean} nodisable
  */
 function update_temp(fromUpdateCoeff, nodisable) {
+
+  // update temp only if pump is on.
+  let switchResult = Shelly.getComponentStatus("switch",0);
+  print("[POOL_update_temp] GETCOMPONENT-STATUS SWITCH :", switchResult.output);
+  if ( !switchResult ){
+    return
+  }
+
   STATUS.tick_temp++;
 
   print("[POOL] update_temp", STATUS.tick_temp, STATUS.current_temp);
