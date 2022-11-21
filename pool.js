@@ -691,7 +691,7 @@ function update_temp(fromUpdateCoeff, nodisable) {
   // update temp only if pump is on.
   let switchResult = Shelly.getComponentStatus("switch",0);
   print("[POOL_update_temp] GETCOMPONENT-STATUS SWITCH :", switchResult.output);
-  if ( !switchResult ){
+  if ( !switchResult.output ){
     return
   }
 
