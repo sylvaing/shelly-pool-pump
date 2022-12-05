@@ -689,11 +689,11 @@ function update_pump_hivernage(){
 function update_temp(fromUpdateCoeff, nodisable) {
 
   // update temp only if pump is on.
-  let switchResult = Shelly.getComponentStatus("switch",0);
-  print("[POOL_update_temp] GETCOMPONENT-STATUS SWITCH :", switchResult.output);
-  if ( !switchResult.output ){
-    return
-  }
+  // let switchResult = Shelly.getComponentStatus("switch",0);
+  // print("[POOL_update_temp] GETCOMPONENT-STATUS SWITCH :", switchResult.output);
+  // if ( !switchResult.output ){
+  //   return
+  // }
 
   STATUS.tick_temp++;
 
@@ -713,8 +713,14 @@ function update_temp(fromUpdateCoeff, nodisable) {
   STATUS.lock_update = true;
 
   STATUS.temp = Math.round(STATUS.current_temp * 10) / 10;
-  STATUS.temp_today = Math.max(STATUS.temp_today, STATUS.temp);
-  STATUS.temp_max   = Math.max(STATUS.temp_today, STATUS.temp_yesterday);
+  //update max only if pump is on
+  let switchResult = Shelly.getComponentStatus("switch",0);
+  print("[POOL_update_temp] GETCOMPONENT-STATUS SWITCH :", switchResult.output);
+  if ( switchResult.output ){
+    STATUS.temp_today = Math.max(STATUS.temp_today, STATUS.temp);
+    STATUS.temp_max   = Math.max(STATUS.temp_today, STATUS.temp_yesterday);
+  }
+
 
   //print("[POOL] update_temp - max today:", STATUS.temp_max, "today:", STATUS.temp_today, "yesterday:", STATUS.temp_yesterday);
   //print("[POOL] update_temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last, "temp_ext:", STATUS.temp_ext);
@@ -771,7 +777,7 @@ function update_temp_call(){
   STATUS.update_time = STATUS.current_time;
   print("[POOL TIME] ", STATUS.update_time);
   // freeze_mode
-  if (STATUS.temp_ext < 2){
+  if (STATUS.temp_ext < 0.5){
     print("[POOL] Mode hivernage - temp : ", STATUS.temp_ext);
     STATUS.freeze_mode = true;
     update_pump_hivernage();
