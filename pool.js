@@ -89,6 +89,7 @@ let STATUS = {
     off: "off",
   },
   update_period: 60000,
+  freeze_temp: 0.5,
 };
 
 Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
@@ -156,7 +157,6 @@ function switchActivate(sw_state, nolock) {
     print("[POOL_DISABLE_TEMP] switchActivate() disable temp", STATUS.tick_lock);
 
     STATUS.disable_temp = Timer.set(
-      //6 * 100,
       600 * 1000,
       false,
       function () {
@@ -645,7 +645,7 @@ function update_pump(temp, max, time) {
 
 function compute_switch_from_schedule(){
 
-  if (STATUS.sel_mode === "Auto"){
+  if ((STATUS.sel_mode === "Auto") && ( STATUS.freeze_mode === false )){
     // compute the current switch state according to the schedule
     on = false;
     let j = false;
@@ -687,6 +687,14 @@ function update_pump_hivernage(){
  * @param {boolean} nodisable
  */
 function update_temp(fromUpdateCoeff, nodisable) {
+
+  // update temp only if pump is on.
+  // let switchResult = Shelly.getComponentStatus("switch",0);
+  // print("[POOL_update_temp] GETCOMPONENT-STATUS SWITCH :", switchResult.output);
+  // if ( !switchResult.output ){
+  //   return
+  // }
+
   STATUS.tick_temp++;
 
   print("[POOL] update_temp", STATUS.tick_temp, STATUS.current_temp);
@@ -705,8 +713,14 @@ function update_temp(fromUpdateCoeff, nodisable) {
   STATUS.lock_update = true;
 
   STATUS.temp = Math.round(STATUS.current_temp * 10) / 10;
-  STATUS.temp_today = Math.max(STATUS.temp_today, STATUS.temp);
-  STATUS.temp_max   = Math.max(STATUS.temp_today, STATUS.temp_yesterday);
+  //update max only if pump is on
+  let switchResult = Shelly.getComponentStatus("switch",0);
+  print("[POOL_update_temp] GETCOMPONENT-STATUS SWITCH :", switchResult.output);
+  if ( switchResult.output ){
+    STATUS.temp_today = Math.max(STATUS.temp_today, STATUS.temp);
+    STATUS.temp_max   = Math.max(STATUS.temp_today, STATUS.temp_yesterday);
+  }
+
 
   //print("[POOL] update_temp - max today:", STATUS.temp_max, "today:", STATUS.temp_today, "yesterday:", STATUS.temp_yesterday);
   //print("[POOL] update_temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last, "temp_ext:", STATUS.temp_ext);
@@ -714,7 +728,7 @@ function update_temp(fromUpdateCoeff, nodisable) {
   STATUS.current_time = get_current_time();
   
   if ((STATUS.temp_max !== STATUS.update_temp_max_last) ||
-      (STATUS.temp_ext < 2 ) ||
+      (STATUS.temp_ext < CONFIG.freeze_temp ) ||
       (STATUS.freeze_mode === true) ||
       (fromUpdateCoeff === true)  ||
       (nodisable === true) ) {
@@ -763,7 +777,7 @@ function update_temp_call(){
   STATUS.update_time = STATUS.current_time;
   print("[POOL TIME] ", STATUS.update_time);
   // freeze_mode
-  if (STATUS.temp_ext < 2){
+  if (STATUS.temp_ext < CONFIG.freeze_temp){
     print("[POOL] Mode hivernage - temp : ", STATUS.temp_ext);
     STATUS.freeze_mode = true;
     update_pump_hivernage();
@@ -823,17 +837,45 @@ MQTT.subscribe(
   }
 )
 
+// Shelly.addEventHandler(
+//   function (data) {
+//     if (data.info.event === "toggle"){
+
+//       let result = Shelly.getComponentStatus("switch",0); 
+//       print("[POOL_] GETCOMPONENT-STATUS SWITCH :", result.output);
+
+//       let _state_str = result.output ? "ON" : "OFF";
+//       MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+
+
+//     }
+//   }
+// );
+
 Shelly.addEventHandler(
   function (data) {
-    if (data.info.event === "toggle"){
+    if (data.info.event === "toggle") {
 
       let result = Shelly.getComponentStatus("switch",0); 
-      print("[POOL_] GETCOMPONENT-STATUS SWITCH :", result.output);
+      print("[POOL_] TOGGLE EVENT GETCOMPONENT-STATUS SWITCH :", result.output);
 
       let _state_str = result.output ? "ON" : "OFF";
       MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
 
+      STATUS.tick_lock++;
+      print("[POOL] disable temp", STATUS.tick_lock);
 
+      if (STATUS.disable_temp !== null)
+        Timer.clear(STATUS.disable_temp);
+
+      STATUS.disable_temp = Timer.set(
+        600 * 1000,
+        false,
+        function () {
+          print("[POOL] re-enable temp");
+          STATUS.disable_temp = null;
+        }
+      );
     }
   }
 );
