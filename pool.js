@@ -645,7 +645,7 @@ function update_pump(temp, max, time) {
 
 function compute_switch_from_schedule(){
 
-  if (STATUS.sel_mode === "Auto"){
+  if ((STATUS.sel_mode === "Auto") && ( STATUS.freeze_mode === false )){
     // compute the current switch state according to the schedule
     on = false;
     let j = false;
@@ -857,7 +857,7 @@ Shelly.addEventHandler(
     if (data.info.event === "toggle") {
 
       let result = Shelly.getComponentStatus("switch",0); 
-      print("[POOL_] GETCOMPONENT-STATUS SWITCH :", result.output);
+      print("[POOL_] TOGGLE EVENT GETCOMPONENT-STATUS SWITCH :", result.output);
 
       let _state_str = result.output ? "ON" : "OFF";
       MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
