@@ -10,7 +10,7 @@
  * 
  * Calculate duration filter from current temperature of water, and use max temp of the day and yesterday. The script use sun noon
  * to calculate the start of script and the end. the morning and the afternoon are separate by sun noon, and duration are equal.
- * manage freeze mode : under 2°C pump will be activate to prevent freeze of water.
+ * manage freeze mode : under 0.5°C pump will be activate to prevent freeze of water.
  * 
  * Publish informations on MQTT for Home Assistant autodiscover, all sensors and switch are autocreate in your home assitant.
  * Before use the script you must configure correcly your Shelly device to connect a your MQTT broker trought web interface or shelly app.
@@ -477,10 +477,13 @@ function initMQTT() {
 // compute duration of filtration for a given max temperature
 // duration is returned in float format (1.25 -> 1h 15mn)
 function compute_duration_filt(t) {
-  if (t < 5)
-    return 1* STATUS.coeff;
+//  if (t < 5)
+//    return 1* STATUS.coeff;
+  if (t < 4)
+      return 0.5 * STATUS.coeff;            // ->0.5
   if (t < 10)
-    return ((t/5)* STATUS.coeff);           // 1 -> 2
+//    return ((t/5)* STATUS.coeff);           // 1 -> 2
+    return ((t/7)* STATUS.coeff);
   if (t < 12)
     return ((t-8)* STATUS.coeff);           // 2 -> 4
   if (t < 16)
@@ -567,8 +570,12 @@ function update_new_day() {
   if (t <= STATUS.update_time){
     STATUS.tick_day++;
     print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
-    //STATUS.temp_yesterday = STATUS.temp_max;
-    STATUS.temp_yesterday = STATUS.temp_today;
+    // suivant le déclenchement du "new day", cela ne prend pas en compte la temperature max de la vielle, et donc la pompe démarre le matin
+    // puis s'arrete sur une autre reprogrammation, car la température est moins élevé
+    // donc pour test pour l'instant
+    //FIXME
+    STATUS.temp_yesterday = STATUS.temp_max;
+    //STATUS.temp_yesterday = STATUS.temp_today;
     STATUS.temp_today = null;
     STATUS.update_time = t
   }
