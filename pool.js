@@ -542,7 +542,13 @@ function compute_schedule_filt_pivot(d) {
   //let matin = Math.round(d)/2;
   let matin = d/2;
   let aprem = d - matin;
-  s = [ STATUS.next_noon - matin, STATUS.next_noon + aprem ];
+  // si l'heure de fin est supérieur 24, repositionner l'heure a partir de 00:00, on retranche 24
+  let saprem = STATUS.next_noon + aprem;
+  if ( saprem >= 24) {
+    saprem = saprem - 24;
+  }
+  //s = [ STATUS.next_noon - matin, STATUS.next_noon + aprem ];
+  s = [ STATUS.next_noon - matin, saprem ];
 
   STATUS.start = JSON.stringify(s[0]);
   STATUS.stop = JSON.stringify(s[1]);
@@ -567,17 +573,23 @@ function update_new_day() {
   print("[POOL] [NEW_DAY] update_new_day debug IF - current_time:", t, " <= update_time:", STATUS.update_time);
   print("[POOL] [NEW_DAY] temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
 
-  if (t <= STATUS.update_time){
+  if (t <= STATUS.update_time && STATUS.temp_today !== null){
     STATUS.tick_day++;
     print("[POOL_NEW_DAY] update_new_day is OK", STATUS.tick_day);
     // suivant le déclenchement du "new day", cela ne prend pas en compte la temperature max de la vielle, et donc la pompe démarre le matin
     // puis s'arrete sur une autre reprogrammation, car la température est moins élevé
     // donc pour test pour l'instant
     //FIXME
-    STATUS.temp_yesterday = STATUS.temp_max;
-    //STATUS.temp_yesterday = STATUS.temp_today;
+    //STATUS.temp_yesterday = STATUS.temp_max;
+    STATUS.temp_yesterday = STATUS.temp_today;
     STATUS.temp_today = null;
     STATUS.update_time = t
+
+    //FIXME TEST
+    //quand la temeprature diminue d'un jour sur l'autre, le new day change la température de yesterday, mais pas la programation.
+    // Du coup le matin lapompe fonctionne 10 min et met a jour la programation durant le fonctionnement, puis s'arrete et recommence en fonction de la prog.
+    // Il faut que la programation soit mise à jour dès que le new day est updated.
+    update_temp(false,false);
   }
 
 }
