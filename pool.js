@@ -34,7 +34,7 @@ let STATUS = {
   temp_max: 0,
   temp_today: 0,
   temp_yesterday: 0,
-  next_noon: 12,
+  next_noon: 14,
   freeze_mode: false,
   coeff: 1.2,
   sel_mode: "Force off",
@@ -72,10 +72,12 @@ let STATUS = {
  */
 
  let CONFIG = {
+  shelly_id_temp_ext: 100,
+  shelly_id_temp_pool: 101,
   shelly_id: null,
   shelly_mac: null,
   shelly_fw_id: null,
-  device_name: "POOL_PUMP",
+  device_name: "POOL_PUMP_TEST",
   ha_mqtt_ad: "homeassistant",
   ha_dev_type: {
     name: "",
@@ -835,26 +837,26 @@ function update_temp_call(){
 
 // receives update from Pool Sensor
 // - trigger all temperature and pump updates
-MQTT.subscribe(
-  "ha/pool",
-  function (topic, msg) {
-    STATUS.tick_mqtt++;
-    print("[POOL] mqtt", topic);
-    print("[POOL] MQTT", msg);
-    let obj = null ;
-    if (obj = JSON.parse(msg)){
-      if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) )  {
-        return;
-      }
-      update_next_noon(obj.next_noon);
-      STATUS.current_temp = obj.temperature;
-      STATUS.temp_ext = obj.temperature_ext;
-      update_temp(false,false);
-    }else{
-      return;
-    }
-  }
-)
+// MQTT.subscribe(
+//   "ha/pool",
+//   function (topic, msg) {
+//     STATUS.tick_mqtt++;
+//     print("[POOL] mqtt", topic);
+//     print("[POOL] MQTT", msg);
+//     let obj = null ;
+//     if (obj = JSON.parse(msg)){
+//       if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) )  {
+//         return;
+//       }
+//       update_next_noon(obj.next_noon);
+//       STATUS.current_temp = obj.temperature;
+//       STATUS.temp_ext = obj.temperature_ext;
+//       update_temp(false,false);
+//     }else{
+//       return;
+//     }
+//   }
+// )
 
 // Shelly.addEventHandler(
 //   function (data) {
@@ -870,6 +872,28 @@ MQTT.subscribe(
 //     }
 //   }
 // );
+// Event pour changement de température
+Shelly.addEventHandler(
+  function (data) {
+
+    let re = JSON.stringify(data);
+    print("EVENT", re);
+    if (data.info.event === "temperature_change") {
+      if (data.info.id === CONFIG.shelly_id_temp_ext) {
+        // changement de la temperature exterieur
+        STATUS.temp_ext = data.info.tC;
+        print("changement de la temperature exterieur");
+      }
+      if (data.info.id === CONFIG.shelly_id_temp_pool) {
+        // changement de la temperature pool
+        STATUS.current_temp = data.info.tC;
+        print("changement de la temperature piscine");
+      }
+      //process mise à jour des temperature
+      update_temp(false,false);
+    }
+  }
+);
 
 Shelly.addEventHandler(
   function (data) {
