@@ -52,6 +52,7 @@ let STATUS = {
   schedule: null,
   start: null,
   stop: null,
+  stop_orig: null,
 
   time: null,
   uptime: null,
@@ -264,7 +265,7 @@ function publishState() {
   };
   _sensor.duration = STATUS.duration;
   _sensor.start = STATUS.start;
-  _sensor.stop = STATUS.stop;
+  _sensor.stop = STATUS.stop_orig;
   _sensor.temp_max = STATUS.temp_max
   _sensor.temp_max_yesterday = STATUS.temp_yesterday
   if (STATUS.freeze_mode === true){
@@ -554,6 +555,7 @@ function compute_schedule_filt_pivot(d) {
 
   STATUS.start = JSON.stringify(s[0]);
   STATUS.stop = JSON.stringify(s[1]);
+  STATUS.stop_orig = JSON.stringify(STATUS.next_noon + aprem);
 
   return s;
 }
@@ -670,10 +672,14 @@ function compute_switch_from_schedule(){
     // compute the current switch state according to the schedule
     on = false;
     let j = false;
-    for (let i = 0; i < schedule.length; i++) {
+    let schedule24 = schedule;
+    if ( schedule24[1] < STATUS.next_noon ){
+      schedule24[1] = schedule24[1] + 24;
+    }
+    for (let i = 0; i < schedule24.length; i++) {
       j = !j;
-      print("[POOL SWITCH] time:", time ,"schedule[i]");
-      if (time >= schedule[i])
+      print("[POOL SWITCH] time:", time ,"schedule24[i]");
+      if (time >= schedule24[i])
         on = j;
     }
     print("[POOL SWITCH] time:", time ,"");
