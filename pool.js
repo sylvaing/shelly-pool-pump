@@ -14,13 +14,13 @@
  * 
  * Publish informations on MQTT for Home Assistant autodiscover, all sensors and switch are autocreate in your home assitant.
  * Before use the script you must configure correcly your Shelly device to connect a your MQTT broker trought web interface or shelly app.
+ * From version 2 of this script, you must also use external addon and two DS18b20, one for the water, an other one for air temp.
+ * So you must configure shelly_id_temp_ext and shelly_id_temp_pool in this script according of your id in shelly addon configuration.
  * 
- * Today, there are no native external sensor, so you must publish temp of water and external temperature on one MQTT topic "ha/pool/...". you have
- * configuration package 'pool_pum.yaml' to do this, replace and addapt tou your sensor and configuration.
+ * The next noon is no fix a 14h00 by default.
  * 
- * You must also publish th next_noon on the same topic, to calulate the middle of duration filtration
  * 
- * You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, put you can choose what you want.
+ * You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, but you can choose what you want.
  *
  */
 
