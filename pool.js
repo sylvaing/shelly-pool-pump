@@ -3,21 +3,21 @@
  * https://github.com/sylvaing/shelly-pool-pump
  * 
  * This script is intended to  manage your pool pump from a Shelly Plus device.
- * He is compatible from firmware 0.11
+ * He is compatible from firmware 1.0.3
  * 
  * Based on shelly script of ggilles with lot of new feature and improvment.
  * https://www.shelly-support.eu/forum/index.php?thread/14810-script-randomly-killed-on-shelly-plus-1pm/
  * 
  * Calculate duration filter from current temperature of water, and use max temp of the day and yesterday. The script use sun noon
  * to calculate the start of script and the end. the morning and the afternoon are separate by sun noon, and duration are equal.
- * manage freeze mode : under 0.5°C pump will be activate to prevent freeze of water.
+ * manage freeze mode : under 0.5°C (CONFIG.freeze_temp) pump will be activate to prevent freeze of water.
  * 
  * Publish informations on MQTT for Home Assistant autodiscover, all sensors and switch are autocreate in your home assitant.
  * Before use the script you must configure correcly your Shelly device to connect a your MQTT broker trought web interface or shelly app.
  * From version 2 of this script, you must also use external addon and two DS18b20, one for the water, an other one for air temp.
  * So you must configure shelly_id_temp_ext and shelly_id_temp_pool in this script according of your id in shelly addon configuration.
  * 
- * The next noon is no fix a 14h00 by default.
+ * The next noon is no fix a 14h00 (STATUS.next_noon) by default.
  * 
  * 
  * You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, but you can choose what you want.
@@ -93,6 +93,8 @@ let STATUS = {
   },
   update_period: 60000,
   freeze_temp: 0.5,
+  ha_ip: "192.168.1.105",
+  ha_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI3MDIxNmE2Yjk4YmY0YWE0OWQ2YjI2YTZmMThhMzE5NSIsImlhdCI6MTY5NjQ5NDk3MiwiZXhwIjoyMDExODU0OTcyfQ._4Jihf-RTSsHWTCU2_F-nLy5bpZrlH--2XV_xN4gbgw",
 };
 
 Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
@@ -532,9 +534,41 @@ function compute_duration_filt_abacus(t){
 function update_next_noon(d){
   // il faut aller chercher la valeur de HA sun.sun next_noon et ensuite la convertir
   //print("[POOL_NEXT_NOON] date pivot", d);
-  let new_d = JSON.parse(d.slice(0,2)) + JSON.parse(d.slice(3,5)) / 60;
-  STATUS.next_noon = new_d;
+  //let new_d = JSON.parse(d.slice(0,2)) + JSON.parse(d.slice(3,5)) / 60;
+  //STATUS.next_noon = new_d;
   //print("[POOL_NEXT_NOON] new_date pivot", new_d);
+
+  let h = {
+    method: "GET",
+    url: "http://"+ CONFIG.ha_ip +":8123/api/states/sun.sun",
+    headers : {
+        Authorization: "Bearer "+ CONFIG.ha_token,
+        'Content-Type': "application/json",
+    },
+    timeout: 4,
+    
+  };
+
+  Shelly.call("HTTP.Request", h, function (result,error_code,error_message) {
+  
+    //print(result);
+    //print(error_code);
+    //print(error_message);
+    let re = JSON.stringify(result);
+    //print(re);
+    let result_json = JSON.parse(result.body);
+    let next_noon = result_json.attributes.next_noon
+    print(next_noon);
+    let d = new Date(next_noon);
+    //print(d.toISOString());
+    //print(d.getHours());
+    //print(d.getMinutes());
+    //print(d.getSeconds());
+    let new_d = d.getHours + d.getMinutes /60;
+    STATUS.next_noon = new_d;
+    
+});
+
 }
 
 // compute the pump schedule for a given duration
