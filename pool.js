@@ -189,6 +189,8 @@ function switchActivate(sw_state, nolock) {
  */
  function MQTTCmdListenerNumber(topic, message) {
   print("[MQTT] listen NUMBER : ", message);
+
+  if ( message !== ""){
   if (STATUS.lock_update === false){
     print("[POOL] - MQTT listenerNumber() lock_update =  false");
     //print("[MQTT] listen Number", message);
@@ -199,6 +201,7 @@ function switchActivate(sw_state, nolock) {
     update_temp(true,false);
   }
     publishState();
+  }
 }
 
 /**
@@ -237,20 +240,20 @@ function MQTTCmdListenerSelect(topic, message) {
 
 }
 
-
+// TODO= a été déplacé a la fin
 /**
  * Publish update on switch change on binary sensor
  */
-Shelly.addEventHandler(function (ev_data) {
-  if (
-    ev_data.component === "switch:0" &&
-    typeof ev_data.info.output !== "undefined"
-  ) {
-    let _state_str = ev_data.info.output ? "ON" : "OFF";
-    MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+// Shelly.addEventHandler(function (ev_data) {
+//   if (
+//     ev_data.component === "switch:0" &&
+//     typeof ev_data.info.output !== "undefined"
+//   ) {
+//     let _state_str = ev_data.info.output ? "ON" : "OFF";
+//     MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
 
-  }
-});
+//   }
+// });
 
 function publishState() {
   // use getComponentStatus (sync call) instead of call of "Sys.GetStatus" ( async call)
@@ -264,12 +267,17 @@ function publishState() {
     mode: "null",
     temp_max : 0,
     temp_max_yesterday: 0,
+    temp_current: 0,
+    temp_ext: 0,
   };
   _sensor.duration = STATUS.duration;
   _sensor.start = STATUS.start;
   _sensor.stop = STATUS.stop_orig;
-  _sensor.temp_max = STATUS.temp_max
-  _sensor.temp_max_yesterday = STATUS.temp_yesterday
+  _sensor.temp_max = STATUS.temp_max;
+  _sensor.temp_max_yesterday = STATUS.temp_yesterday;
+  _sensor.temp_current = STATUS.current_temp;
+  _sensor.temp_ext = STATUS.temp_ext;
+  
   if (STATUS.freeze_mode === true){
     _sensor.mode = 'freeze';
   }else{
@@ -468,6 +476,40 @@ function initMQTT() {
         device_class: "temperature",
         unit_of_measurement: "°C",
         uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max_yesterday",
+      }),
+      0,
+      true
+    );
+
+    //temperature current
+    MQTT.publish(
+      buildMQTTConfigTopic("sensor", "temp_current"),
+      JSON.stringify({
+        dev: CONFIG.ha_dev_type,
+        "~": sensorStateTopic,
+        stat_t: "~",
+        val_tpl: "{{ value_json.temp_current }}",
+        name: "Now",
+        device_class: "temperature",
+        unit_of_measurement: "°C",
+        uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_current",
+      }),
+      0,
+      true
+    );
+
+    //temperature exterior
+    MQTT.publish(
+      buildMQTTConfigTopic("sensor", "temp_ext"),
+      JSON.stringify({
+        dev: CONFIG.ha_dev_type,
+        "~": sensorStateTopic,
+        stat_t: "~",
+        val_tpl: "{{ value_json.temp_ext }}",
+        name: "Exterieur",
+        device_class: "temperature",
+        unit_of_measurement: "°C",
+        uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_ext",
       }),
       0,
       true
@@ -705,8 +747,9 @@ function compute_switch_from_schedule(){
   if ((STATUS.sel_mode === "Auto") && ( STATUS.freeze_mode === false )){
     // compute the current switch state according to the schedule
     on = false;
+    time = get_current_time();
     let j = false;
-    let schedule24 = schedule;
+    let schedule24 = STATUS.schedule;
     if ( schedule24[1] < STATUS.next_noon ){
       schedule24[1] = schedule24[1] + 24;
     }
@@ -718,6 +761,7 @@ function compute_switch_from_schedule(){
     }
     print("[POOL SWITCH] time:", time ,"");
 
+    let calls = [];
     calls.push({method: "Switch.Set", params: {id: 0, on: on}});
     do_call(calls);
     let _state_str = on ? "ON" : "OFF";
@@ -912,12 +956,28 @@ function update_temp_call(){
 //     }
 //   }
 // );
-// Event pour changement de température
 Shelly.addEventHandler(
   function (data) {
 
     let re = JSON.stringify(data);
-    print("EVENT", re);
+    print("EVENTTTTTT", re);
+
+
+    /**
+    * Publish update on switch change on binary sensor
+    */
+    if (
+      data.component === "switch:0" &&
+      typeof data.info.output !== "undefined"
+    ) {
+      let _state_str = data.info.output ? "ON" : "OFF";
+      MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+  
+    }
+
+    // Event pour changement de température
+    //let re = JSON.stringify(data);
+    //print("EVENTTTTTT", re);
     if (data.info.event === "temperature_change") {
       if (data.info.id === CONFIG.shelly_id_temp_ext) {
         // changement de la temperature exterieur
@@ -931,12 +991,10 @@ Shelly.addEventHandler(
       }
       //process mise à jour des temperature
       update_temp(false,false);
+      publishState()
     }
-  }
-);
 
-Shelly.addEventHandler(
-  function (data) {
+    //event changement du switch et lock
     if (data.info.event === "toggle") {
 
       let result = Shelly.getComponentStatus("switch",0); 
@@ -960,8 +1018,37 @@ Shelly.addEventHandler(
         }
       );
     }
+
   }
 );
+
+// Shelly.addEventHandler(
+//   function (data) {
+//     if (data.info.event === "toggle") {
+
+//       let result = Shelly.getComponentStatus("switch",0); 
+//       print("[POOL_] TOGGLE EVENT GETCOMPONENT-STATUS SWITCH :", result.output);
+
+//       let _state_str = result.output ? "ON" : "OFF";
+//       MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+
+//       STATUS.tick_lock++;
+//       print("[POOL] disable temp", STATUS.tick_lock);
+
+//       if (STATUS.disable_temp !== null)
+//         Timer.clear(STATUS.disable_temp);
+
+//       STATUS.disable_temp = Timer.set(
+//         600 * 1000,
+//         false,
+//         function () {
+//           print("[POOL] re-enable temp");
+//           STATUS.disable_temp = null;
+//         }
+//       );
+//     }
+//   }
+// );
 
 /**
  * Activate periodic check for new day
