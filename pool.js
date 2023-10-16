@@ -275,8 +275,8 @@ function publishState() {
   _sensor.stop = STATUS.stop_orig;
   _sensor.temp_max = STATUS.temp_max;
   _sensor.temp_max_yesterday = STATUS.temp_yesterday;
-  _sensor.temp_current = STATUS.current_temp;
-  _sensor.temp_ext = STATUS.temp_ext;
+  //_sensor.temp_current = STATUS.current_temp;
+  //_sensor.temp_ext = STATUS.temp_ext;
   
   if (STATUS.freeze_mode === true){
     _sensor.mode = 'freeze';
@@ -313,6 +313,7 @@ if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState)
  * Initialize listeners and configure switch and sensors entries
  */
 function initMQTT() {
+
   MQTT.subscribe(buildMQTTStateCmdTopics("number", "cmd"), MQTTCmdListenerNumber);
   /**
    * Configure the number coeff
@@ -464,56 +465,56 @@ function initMQTT() {
     0,
     true
   );
-    //temperature max yesterday
-    MQTT.publish(
-      buildMQTTConfigTopic("sensor", "temp_max_yesterday"),
-      JSON.stringify({
-        dev: CONFIG.ha_dev_type,
-        "~": sensorStateTopic,
-        stat_t: "~",
-        val_tpl: "{{ value_json.temp_max_yesterday }}",
-        name: "Yesterday",
-        device_class: "temperature",
-        unit_of_measurement: "°C",
-        uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max_yesterday",
-      }),
-      0,
-      true
-    );
+  //temperature max yesterday
+  MQTT.publish(
+    buildMQTTConfigTopic("sensor", "temp_max_yesterday"),
+    JSON.stringify({
+      dev: CONFIG.ha_dev_type,
+      "~": sensorStateTopic,
+      stat_t: "~",
+      val_tpl: "{{ value_json.temp_max_yesterday }}",
+      name: "Yesterday",
+      device_class: "temperature",
+      unit_of_measurement: "°C",
+      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max_yesterday",
+    }),
+    0,
+    true
+  );
 
     //temperature current
-    MQTT.publish(
-      buildMQTTConfigTopic("sensor", "temp_current"),
-      JSON.stringify({
-        dev: CONFIG.ha_dev_type,
-        "~": sensorStateTopic,
-        stat_t: "~",
-        val_tpl: "{{ value_json.temp_current }}",
-        name: "Now",
-        device_class: "temperature",
-        unit_of_measurement: "°C",
-        uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_current",
-      }),
-      0,
-      true
-    );
+  MQTT.publish(
+    buildMQTTConfigTopic("sensor", "temp_current"),
+    JSON.stringify({
+      dev: CONFIG.ha_dev_type,
+      "~": sensorStateTopic,
+      stat_t: "~",
+      val_tpl: "{{ value_json.temp_current }}",
+      name: "Now",
+      device_class: "temperature",
+      unit_of_measurement: "°C",
+      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_current",
+    }),
+    0,
+    true
+  );
 
-    //temperature exterior
-    MQTT.publish(
-      buildMQTTConfigTopic("sensor", "temp_ext"),
-      JSON.stringify({
-        dev: CONFIG.ha_dev_type,
-        "~": sensorStateTopic,
-        stat_t: "~",
-        val_tpl: "{{ value_json.temp_ext }}",
-        name: "Exterieur",
-        device_class: "temperature",
-        unit_of_measurement: "°C",
-        uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_ext",
-      }),
-      0,
-      true
-    );
+  //temperature exterior
+  MQTT.publish(
+    buildMQTTConfigTopic("sensor", "temp_ext"),
+    JSON.stringify({
+      dev: CONFIG.ha_dev_type,
+      "~": sensorStateTopic,
+      stat_t: "~",
+      val_tpl: "{{ value_json.temp_ext }}",
+      name: "Exterieur",
+      device_class: "temperature",
+      unit_of_measurement: "°C",
+      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_ext",
+    }),
+    0,
+    true
+  );
 }
 
 
@@ -991,7 +992,7 @@ Shelly.addEventHandler(
       }
       //process mise à jour des temperature
       update_temp(false,false);
-      publishState()
+      //publishState()
     }
 
     //event changement du switch et lock
