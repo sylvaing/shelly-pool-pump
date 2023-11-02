@@ -3,7 +3,7 @@
  * https://github.com/sylvaing/shelly-pool-pump
  * 
  * This script is intended to  manage your pool pump from a Shelly Plus device.
- * He is compatible from firmware 1.0.3
+ * He is compatible from firmware ??????, many b ug on 1.0.X firmware
  * 
  * Based on shelly script of ggilles with lot of new feature and improvment.
  * https://www.shelly-support.eu/forum/index.php?thread/14810-script-randomly-killed-on-shelly-plus-1pm/
@@ -17,7 +17,7 @@
  * From version 2 of this script, you must also use external addon and two DS18b20, one for the water, an other one for air temp.
  * So you must configure shelly_id_temp_ext and shelly_id_temp_pool in this script according of your id in shelly addon configuration.
  * 
- * The next noon is no fix a 14h00 (STATUS.next_noon) by default.
+ * The next noon is now fix at 14h00 (STATUS.next_noon) by default.
  * 
  * 
  * You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, but you can choose what you want.
@@ -1023,59 +1023,11 @@ Shelly.addEventHandler(
   }
 );
 
-// Shelly.addEventHandler(
-//   function (data) {
-//     if (data.info.event === "toggle") {
 
-//       let result = Shelly.getComponentStatus("switch",0); 
-//       print("[POOL_] TOGGLE EVENT GETCOMPONENT-STATUS SWITCH :", result.output);
-
-//       let _state_str = result.output ? "ON" : "OFF";
-//       MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
-
-//       STATUS.tick_lock++;
-//       print("[POOL] disable temp", STATUS.tick_lock);
-
-//       if (STATUS.disable_temp !== null)
-//         Timer.clear(STATUS.disable_temp);
-
-//       STATUS.disable_temp = Timer.set(
-//         600 * 1000,
-//         false,
-//         function () {
-//           print("[POOL] re-enable temp");
-//           STATUS.disable_temp = null;
-//         }
-//       );
-//     }
-//   }
-// );
 
 /**
  * Activate periodic check for new day
  * 300000 = 5min
  */
  Timer.set(600000, true, update_new_day);
-
-// Debug...
-
-// Timer.set(
-//   60 * 1000,
-//   true,
-//   function() {
-//     STATUS.tick++;
-//     Shelly.call (
-//       "Sys.GetStatus",
-//       {},
-//       function (result) {
-//         //print("[POOL] DEBUG time : ", result.time, ", update_time : " STATUS.update_time, " , uptime : ", result.uptime);
-//         print("[POOL] DEBUG temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
-//         //print("[POOL] DEBUG temp - temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
-
-//         STATUS.time = result.time;
-//         STATUS.uptime = result.uptime;
-//       }
-//     );
-//   }
-// );
 
