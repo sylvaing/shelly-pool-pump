@@ -27,10 +27,42 @@
 
 print("[POOL] start");
 
+
+
+/**
+ * @typedef {"switch" | "binary_sensor" | "sensor"} HADeviceType
+ * @typedef {"config"|"stat"|"cmd"} HATopicType
+ */
+
+ let CONFIG = {
+  shelly_id_temp_ext: 100,
+  shelly_id_temp_pool: 101,
+  shelly_id: null,
+  shelly_mac: null,
+  shelly_fw_id: null,
+  device_name: "POOL_PUMP_TEST",
+  ha_mqtt_ad: "homeassistant",
+  ha_dev_type: {
+    name: "",
+    ids: [""],
+    mdl: "Shelly-virtual-sensors",
+    sw: "",
+    mf: "Isynet",
+  },
+  payloads: {
+    on: "on",
+    off: "off",
+  },
+  update_period: 60000,
+  freeze_temp: 0.5,
+  ha_ip: "192.168.1.105",
+  ha_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI3MDIxNmE2Yjk4YmY0YWE0OWQ2YjI2YTZmMThhMzE5NSIsImlhdCI6MTY5NjQ5NDk3MiwiZXhwIjoyMDExODU0OTcyfQ._4Jihf-RTSsHWTCU2_F-nLy5bpZrlH--2XV_xN4gbgw",
+};
+
 let STATUS = {
   temp: 0,
-  current_temp: 0,
-  temp_ext: 0,
+  current_temp: Shelly.getComponentStatus("temperature",CONFIG.shelly_id_temp_pool).tC,
+  temp_ext: Shelly.getComponentStatus("temperature",CONFIG.shelly_id_temp_ext).tC,
   temp_max: 0,
   temp_today: 0,
   temp_yesterday: 0,
@@ -66,36 +98,52 @@ let STATUS = {
   tick_day: 0,
 };
 
+// calcul de l'heure pivot pour répartir la programmation de la pompe
+// en fonction du zenith du soleil
 
-/**
- * @typedef {"switch" | "binary_sensor" | "sensor"} HADeviceType
- * @typedef {"config"|"stat"|"cmd"} HATopicType
- */
+function update_next_noon(){
+  // il faut aller chercher la valeur de HA sun.sun next_noon et ensuite la convertir
+  //print("[POOL_NEXT_NOON] date pivot", d);
+  //let new_d = JSON.parse(d.slice(0,2)) + JSON.parse(d.slice(3,5)) / 60;
+  //STATUS.next_noon = new_d;
+  //print("[POOL_NEXT_NOON] new_date pivot", new_d);
 
- let CONFIG = {
-  shelly_id_temp_ext: 100,
-  shelly_id_temp_pool: 101,
-  shelly_id: null,
-  shelly_mac: null,
-  shelly_fw_id: null,
-  device_name: "POOL_PUMP_TEST",
-  ha_mqtt_ad: "homeassistant",
-  ha_dev_type: {
-    name: "",
-    ids: [""],
-    mdl: "Shelly-virtual-sensors",
-    sw: "",
-    mf: "Isynet",
-  },
-  payloads: {
-    on: "on",
-    off: "off",
-  },
-  update_period: 60000,
-  freeze_temp: 0.5,
-  ha_ip: "192.168.1.105",
-  ha_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI3MDIxNmE2Yjk4YmY0YWE0OWQ2YjI2YTZmMThhMzE5NSIsImlhdCI6MTY5NjQ5NDk3MiwiZXhwIjoyMDExODU0OTcyfQ._4Jihf-RTSsHWTCU2_F-nLy5bpZrlH--2XV_xN4gbgw",
-};
+  let h = {
+    method: "GET",
+    url: "http://"+ CONFIG.ha_ip +":8123/api/states/sun.sun",
+    headers : {
+        Authorization: "Bearer "+ CONFIG.ha_token,
+        'Content-Type': "application/json",
+    },
+    timeout: 4,
+    
+  };
+
+  Shelly.call("HTTP.Request", h, function (result,error_code,error_message) {
+  
+    //print(result);
+    //print(error_code);
+    //print(error_message);
+    let re = JSON.stringify(result);
+    //print(re);
+    let result_json = JSON.parse(result.body);
+    let next_noon = result_json.attributes.next_noon
+    //print("--------------------------------");
+    //print(next_noon);
+    let d = new Date(next_noon);
+    //print(d.toISOString());
+    //print(d.getHours());
+    //print(d.getMinutes());
+    //print(d.getSeconds());
+    let new_d = d.getHours() + d.getMinutes() /60;
+    STATUS.next_noon = new_d;
+    //print("POOL_nn: next_noon"+ STATUS.next_noon);
+    
+});
+
+}
+
+update_next_noon();
 
 Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
   CONFIG.shelly_id = result.id;
@@ -275,8 +323,8 @@ function publishState() {
   _sensor.stop = STATUS.stop_orig;
   _sensor.temp_max = STATUS.temp_max;
   _sensor.temp_max_yesterday = STATUS.temp_yesterday;
-  //_sensor.temp_current = STATUS.current_temp;
-  //_sensor.temp_ext = STATUS.temp_ext;
+  _sensor.temp_current = STATUS.current_temp;
+  _sensor.temp_ext = STATUS.temp_ext;
   
   if (STATUS.freeze_mode === true){
     _sensor.mode = 'freeze';
@@ -571,48 +619,7 @@ function compute_duration_filt_abacus(t){
 
 }
 
-// calcul de l'heure pivot pour répartir la programmation de la pompe
-// en fonction du zenith du soleil
 
-function update_next_noon(d){
-  // il faut aller chercher la valeur de HA sun.sun next_noon et ensuite la convertir
-  //print("[POOL_NEXT_NOON] date pivot", d);
-  //let new_d = JSON.parse(d.slice(0,2)) + JSON.parse(d.slice(3,5)) / 60;
-  //STATUS.next_noon = new_d;
-  //print("[POOL_NEXT_NOON] new_date pivot", new_d);
-
-  let h = {
-    method: "GET",
-    url: "http://"+ CONFIG.ha_ip +":8123/api/states/sun.sun",
-    headers : {
-        Authorization: "Bearer "+ CONFIG.ha_token,
-        'Content-Type': "application/json",
-    },
-    timeout: 4,
-    
-  };
-
-  Shelly.call("HTTP.Request", h, function (result,error_code,error_message) {
-  
-    //print(result);
-    //print(error_code);
-    //print(error_message);
-    let re = JSON.stringify(result);
-    //print(re);
-    let result_json = JSON.parse(result.body);
-    let next_noon = result_json.attributes.next_noon
-    print(next_noon);
-    let d = new Date(next_noon);
-    //print(d.toISOString());
-    //print(d.getHours());
-    //print(d.getMinutes());
-    //print(d.getSeconds());
-    let new_d = d.getHours + d.getMinutes /60;
-    STATUS.next_noon = new_d;
-    
-});
-
-}
 
 // compute the pump schedule for a given duration
 // returns an array of start/stop times in float
@@ -961,7 +968,7 @@ Shelly.addEventHandler(
   function (data) {
 
     let re = JSON.stringify(data);
-    print("EVENTTTTTT", re);
+    print("EVENT", re);
 
 
     /**
@@ -992,7 +999,7 @@ Shelly.addEventHandler(
       }
       //process mise à jour des temperature
       update_temp(false,false);
-      //publishState()
+      publishState()
     }
 
     //event changement du switch et lock
