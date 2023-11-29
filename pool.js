@@ -3,7 +3,7 @@
  * https://github.com/sylvaing/shelly-pool-pump
  * 
  * This script is intended to  manage your pool pump from a Shelly Plus device.
- * He is compatible from firmware ??????, many b ug on 1.0.X firmware
+ * He is compatible from firmware 1.0.8.
  * 
  * Based on shelly script of ggilles with lot of new feature and improvment.
  * https://www.shelly-support.eu/forum/index.php?thread/14810-script-randomly-killed-on-shelly-plus-1pm/
@@ -14,14 +14,22 @@
  * 
  * Publish informations on MQTT for Home Assistant autodiscover, all sensors and switch are autocreate in your home assitant.
  * Before use the script you must configure correcly your Shelly device to connect a your MQTT broker trought web interface or shelly app.
- * From version 2 of this script, you must also use external addon and two DS18b20, one for the water, an other one for air temp.
+ * You must also use shelly external addon and two DS18b20, one for the water, an other one for air temp.
  * So you must configure shelly_id_temp_ext and shelly_id_temp_pool in this script according of your id in shelly addon configuration.
  * 
- * The next noon is now fix at 14h00 (STATUS.next_noon) by default.
- * 
+ * The next noon is fix at 2h00pm (STATUS.next_noon) by default.
+ * the script request your home hassitant inorder to find your next_noon. If error to request the next noon on your Home Assisstant the value is 2h00pm
+ * You must generate token on your Home Assitant installation, and replace value CONFIG.ha_token and also IP of your HA installation
  * 
  * You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, but you can choose what you want.
  *
+ * configuration resume
+ * CONFIG.freeze_temp : prevent freeze of water under this temp
+ * CONFIG.shelly_id_temp_ext: Shelly id of external temp ( see your config on shelly UI
+ * CONFIG.shelly_id_temp_pool: Shelly id of water pool temp ( see your config on shelly UI
+ * CONFIG.ha_ip: IP of your Home assitant
+ * CONFIG.ha_token: long lived access token on your Home assistant API ( see here: https://developers.home-assistant.io/docs/auth_api/#:~:text=Long%2Dlived%20access%20tokens%20can,access%20token%20for%20current%20user. )
+ * 
  */
 
 
@@ -121,23 +129,28 @@ function update_next_noon(){
 
   Shelly.call("HTTP.Request", h, function (result,error_code,error_message) {
   
-    //print(result);
-    //print(error_code);
-    //print(error_message);
-    let re = JSON.stringify(result);
-    //print(re);
-    let result_json = JSON.parse(result.body);
-    let next_noon = result_json.attributes.next_noon
-    //print("--------------------------------");
-    //print(next_noon);
-    let d = new Date(next_noon);
-    //print(d.toISOString());
-    //print(d.getHours());
-    //print(d.getMinutes());
-    //print(d.getSeconds());
-    let new_d = d.getHours() + d.getMinutes() /60;
-    STATUS.next_noon = new_d;
-    //print("POOL_nn: next_noon"+ STATUS.next_noon);
+    if (error_code == 0 ) {
+      //print(result);
+      //print(error_code);
+      //print(error_message);
+      let re = JSON.stringify(result);
+      //print(re);
+      let result_json = JSON.parse(result.body);
+      let next_noon = result_json.attributes.next_noon
+      //print("--------------------------------");
+      //print(next_noon);
+      let d = new Date(next_noon);
+      //print(d.toISOString());
+      //print(d.getHours());
+      //print(d.getMinutes());
+      //print(d.getSeconds());
+      let new_d = d.getHours() + d.getMinutes() /60;
+      STATUS.next_noon = new_d;
+      //print("POOL_nn: next_noon"+ STATUS.next_noon);
+    }else{
+      print("ERROR CODE HTTP request on HA next noon: "+error_code);
+      STATUS.next_noon = 14;
+    }
     
 });
 
@@ -927,43 +940,7 @@ function update_temp_call(){
 
 }
 
-// receives update from Pool Sensor
-// - trigger all temperature and pump updates
-// MQTT.subscribe(
-//   "ha/pool",
-//   function (topic, msg) {
-//     STATUS.tick_mqtt++;
-//     print("[POOL] mqtt", topic);
-//     print("[POOL] MQTT", msg);
-//     let obj = null ;
-//     if (obj = JSON.parse(msg)){
-//       if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) )  {
-//         return;
-//       }
-//       update_next_noon(obj.next_noon);
-//       STATUS.current_temp = obj.temperature;
-//       STATUS.temp_ext = obj.temperature_ext;
-//       update_temp(false,false);
-//     }else{
-//       return;
-//     }
-//   }
-// )
 
-// Shelly.addEventHandler(
-//   function (data) {
-//     if (data.info.event === "toggle"){
-
-//       let result = Shelly.getComponentStatus("switch",0); 
-//       print("[POOL_] GETCOMPONENT-STATUS SWITCH :", result.output);
-
-//       let _state_str = result.output ? "ON" : "OFF";
-//       MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
-
-
-//     }
-//   }
-// );
 Shelly.addEventHandler(
   function (data) {
 
