@@ -3,38 +3,78 @@
  * https://github.com/sylvaing/shelly-pool-pump
  * 
  * This script is intended to  manage your pool pump from a Shelly Plus device.
- * He is compatible from firmware 0.11
+ * He is compatible from firmware 1.0.8.
  * 
  * Based on shelly script of ggilles with lot of new feature and improvment.
  * https://www.shelly-support.eu/forum/index.php?thread/14810-script-randomly-killed-on-shelly-plus-1pm/
  * 
  * Calculate duration filter from current temperature of water, and use max temp of the day and yesterday. The script use sun noon
  * to calculate the start of script and the end. the morning and the afternoon are separate by sun noon, and duration are equal.
- * manage freeze mode : under 0.5°C pump will be activate to prevent freeze of water.
+ * manage freeze mode : under 0.5°C (CONFIG.freeze_temp) pump will be activate to prevent freeze of water.
  * 
  * Publish informations on MQTT for Home Assistant autodiscover, all sensors and switch are autocreate in your home assitant.
  * Before use the script you must configure correcly your Shelly device to connect a your MQTT broker trought web interface or shelly app.
+ * You must also use shelly external addon and two DS18b20, one for the water, an other one for air temp.
+ * So you must configure shelly_id_temp_ext and shelly_id_temp_pool in this script according of your id in shelly addon configuration.
  * 
- * Today, there are no native external sensor, so you must publish temp of water and external temperature on one MQTT topic "ha/pool/...". you have
- * configuration package 'pool_pum.yaml' to do this, replace and addapt tou your sensor and configuration.
+ * The next noon is fix at 2h00pm (STATUS.next_noon) by default.
+ * the script request your home hassitant inorder to find your next_noon. If error to request the next noon on your Home Assisstant the value is 2h00pm
+ * You must generate token on your Home Assitant installation, and replace value CONFIG.ha_token and also IP of your HA installation
  * 
- * You must also publish th next_noon on the same topic, to calulate the middle of duration filtration
- * 
- * You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, put you can choose what you want.
+ * You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, but you can choose what you want.
  *
+ * configuration resume
+ * CONFIG.freeze_temp : prevent freeze of water under this temp
+ * CONFIG.shelly_id_temp_ext: Shelly id of external temp ( see your config on shelly UI
+ * CONFIG.shelly_id_temp_pool: Shelly id of water pool temp ( see your config on shelly UI
+ * CONFIG.ha_ip: IP of your Home assitant
+ * CONFIG.ha_token: long lived access token on your Home assistant API ( see here: https://developers.home-assistant.io/docs/auth_api/#:~:text=Long%2Dlived%20access%20tokens%20can,access%20token%20for%20current%20user. )
+ * 
  */
 
 
 print("[POOL] start");
 
+
+
+/**
+ * @typedef {"switch" | "binary_sensor" | "sensor"} HADeviceType
+ * @typedef {"config"|"stat"|"cmd"} HATopicType
+ */
+
+ let CONFIG = {
+  shelly_id_temp_ext: 100,
+  shelly_id_temp_pool: 101,
+  shelly_id: null,
+  shelly_mac: null,
+  shelly_fw_id: null,
+  device_name: "POOL_PUMP_TEST",
+  ha_mqtt_ad: "homeassistant",
+  ha_dev_type: {
+    name: "",
+    ids: [""],
+    mdl: "Shelly-virtual-sensors",
+    sw: "",
+    mf: "Isynet",
+  },
+  payloads: {
+    on: "on",
+    off: "off",
+  },
+  update_period: 60000,
+  freeze_temp: 0.5,
+  ha_ip: "192.168.1.105",
+  ha_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI3MDIxNmE2Yjk4YmY0YWE0OWQ2YjI2YTZmMThhMzE5NSIsImlhdCI6MTY5NjQ5NDk3MiwiZXhwIjoyMDExODU0OTcyfQ._4Jihf-RTSsHWTCU2_F-nLy5bpZrlH--2XV_xN4gbgw",
+};
+
 let STATUS = {
   temp: 0,
-  current_temp: 0,
-  temp_ext: 0,
+  current_temp: Shelly.getComponentStatus("temperature",CONFIG.shelly_id_temp_pool).tC,
+  temp_ext: Shelly.getComponentStatus("temperature",CONFIG.shelly_id_temp_ext).tC,
   temp_max: 0,
   temp_today: 0,
   temp_yesterday: 0,
-  next_noon: 12,
+  next_noon: 14,
   freeze_mode: false,
   coeff: 1.2,
   sel_mode: "Force off",
@@ -52,6 +92,7 @@ let STATUS = {
   schedule: null,
   start: null,
   stop: null,
+  stop_orig: null,
 
   time: null,
   uptime: null,
@@ -65,32 +106,57 @@ let STATUS = {
   tick_day: 0,
 };
 
+// calcul de l'heure pivot pour répartir la programmation de la pompe
+// en fonction du zenith du soleil
 
-/**
- * @typedef {"switch" | "binary_sensor" | "sensor"} HADeviceType
- * @typedef {"config"|"stat"|"cmd"} HATopicType
- */
+function update_next_noon(){
+  // il faut aller chercher la valeur de HA sun.sun next_noon et ensuite la convertir
+  //print("[POOL_NEXT_NOON] date pivot", d);
+  //let new_d = JSON.parse(d.slice(0,2)) + JSON.parse(d.slice(3,5)) / 60;
+  //STATUS.next_noon = new_d;
+  //print("[POOL_NEXT_NOON] new_date pivot", new_d);
 
- let CONFIG = {
-  shelly_id: null,
-  shelly_mac: null,
-  shelly_fw_id: null,
-  device_name: "POOL_PUMP",
-  ha_mqtt_ad: "homeassistant",
-  ha_dev_type: {
-    name: "",
-    ids: [""],
-    mdl: "Shelly-virtual-sensors",
-    sw: "",
-    mf: "Isynet",
-  },
-  payloads: {
-    on: "on",
-    off: "off",
-  },
-  update_period: 60000,
-  freeze_temp: 0.5,
-};
+  let h = {
+    method: "GET",
+    url: "http://"+ CONFIG.ha_ip +":8123/api/states/sun.sun",
+    headers : {
+        Authorization: "Bearer "+ CONFIG.ha_token,
+        'Content-Type': "application/json",
+    },
+    timeout: 4,
+    
+  };
+
+  Shelly.call("HTTP.Request", h, function (result,error_code,error_message) {
+  
+    if (error_code == 0 ) {
+      //print(result);
+      //print(error_code);
+      //print(error_message);
+      let re = JSON.stringify(result);
+      //print(re);
+      let result_json = JSON.parse(result.body);
+      let next_noon = result_json.attributes.next_noon
+      //print("--------------------------------");
+      //print(next_noon);
+      let d = new Date(next_noon);
+      //print(d.toISOString());
+      //print(d.getHours());
+      //print(d.getMinutes());
+      //print(d.getSeconds());
+      let new_d = d.getHours() + d.getMinutes() /60;
+      STATUS.next_noon = new_d;
+      //print("POOL_nn: next_noon"+ STATUS.next_noon);
+    }else{
+      print("ERROR CODE HTTP request on HA next noon: "+error_code);
+      STATUS.next_noon = 14;
+    }
+    
+});
+
+}
+
+update_next_noon();
 
 Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
   CONFIG.shelly_id = result.id;
@@ -184,6 +250,8 @@ function switchActivate(sw_state, nolock) {
  */
  function MQTTCmdListenerNumber(topic, message) {
   print("[MQTT] listen NUMBER : ", message);
+
+  if ( message !== ""){
   if (STATUS.lock_update === false){
     print("[POOL] - MQTT listenerNumber() lock_update =  false");
     //print("[MQTT] listen Number", message);
@@ -194,6 +262,7 @@ function switchActivate(sw_state, nolock) {
     update_temp(true,false);
   }
     publishState();
+  }
 }
 
 /**
@@ -232,20 +301,20 @@ function MQTTCmdListenerSelect(topic, message) {
 
 }
 
-
+// TODO= a été déplacé a la fin
 /**
  * Publish update on switch change on binary sensor
  */
-Shelly.addEventHandler(function (ev_data) {
-  if (
-    ev_data.component === "switch:0" &&
-    typeof ev_data.info.output !== "undefined"
-  ) {
-    let _state_str = ev_data.info.output ? "ON" : "OFF";
-    MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+// Shelly.addEventHandler(function (ev_data) {
+//   if (
+//     ev_data.component === "switch:0" &&
+//     typeof ev_data.info.output !== "undefined"
+//   ) {
+//     let _state_str = ev_data.info.output ? "ON" : "OFF";
+//     MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
 
-  }
-});
+//   }
+// });
 
 function publishState() {
   // use getComponentStatus (sync call) instead of call of "Sys.GetStatus" ( async call)
@@ -259,12 +328,17 @@ function publishState() {
     mode: "null",
     temp_max : 0,
     temp_max_yesterday: 0,
+    temp_current: 0,
+    temp_ext: 0,
   };
   _sensor.duration = STATUS.duration;
   _sensor.start = STATUS.start;
-  _sensor.stop = STATUS.stop;
-  _sensor.temp_max = STATUS.temp_max
-  _sensor.temp_max_yesterday = STATUS.temp_yesterday
+  _sensor.stop = STATUS.stop_orig;
+  _sensor.temp_max = STATUS.temp_max;
+  _sensor.temp_max_yesterday = STATUS.temp_yesterday;
+  _sensor.temp_current = STATUS.current_temp;
+  _sensor.temp_ext = STATUS.temp_ext;
+  
   if (STATUS.freeze_mode === true){
     _sensor.mode = 'freeze';
   }else{
@@ -300,6 +374,7 @@ if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState)
  * Initialize listeners and configure switch and sensors entries
  */
 function initMQTT() {
+
   MQTT.subscribe(buildMQTTStateCmdTopics("number", "cmd"), MQTTCmdListenerNumber);
   /**
    * Configure the number coeff
@@ -451,22 +526,56 @@ function initMQTT() {
     0,
     true
   );
-    //temperature max yesterday
-    MQTT.publish(
-      buildMQTTConfigTopic("sensor", "temp_max_yesterday"),
-      JSON.stringify({
-        dev: CONFIG.ha_dev_type,
-        "~": sensorStateTopic,
-        stat_t: "~",
-        val_tpl: "{{ value_json.temp_max_yesterday }}",
-        name: "Yesterday",
-        device_class: "temperature",
-        unit_of_measurement: "°C",
-        uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max_yesterday",
-      }),
-      0,
-      true
-    );
+  //temperature max yesterday
+  MQTT.publish(
+    buildMQTTConfigTopic("sensor", "temp_max_yesterday"),
+    JSON.stringify({
+      dev: CONFIG.ha_dev_type,
+      "~": sensorStateTopic,
+      stat_t: "~",
+      val_tpl: "{{ value_json.temp_max_yesterday }}",
+      name: "Yesterday",
+      device_class: "temperature",
+      unit_of_measurement: "°C",
+      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_max_yesterday",
+    }),
+    0,
+    true
+  );
+
+    //temperature current
+  MQTT.publish(
+    buildMQTTConfigTopic("sensor", "temp_current"),
+    JSON.stringify({
+      dev: CONFIG.ha_dev_type,
+      "~": sensorStateTopic,
+      stat_t: "~",
+      val_tpl: "{{ value_json.temp_current }}",
+      name: "Now",
+      device_class: "temperature",
+      unit_of_measurement: "°C",
+      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_current",
+    }),
+    0,
+    true
+  );
+
+  //temperature exterior
+  MQTT.publish(
+    buildMQTTConfigTopic("sensor", "temp_ext"),
+    JSON.stringify({
+      dev: CONFIG.ha_dev_type,
+      "~": sensorStateTopic,
+      stat_t: "~",
+      val_tpl: "{{ value_json.temp_ext }}",
+      name: "Exterieur",
+      device_class: "temperature",
+      unit_of_measurement: "°C",
+      uniq_id: CONFIG.shelly_mac + ":" + CONFIG.device_name + "_temp_ext",
+    }),
+    0,
+    true
+  );
 }
 
 
@@ -523,16 +632,7 @@ function compute_duration_filt_abacus(t){
 
 }
 
-// calcul de l'heure pivot pour répartir la programmation de la pompe
-// en fonction du zenith du soleil
 
-function update_next_noon(d){
-  // il faut aller chercher la valeur de HA sun.sun next_noon et ensuite la convertir
-  //print("[POOL_NEXT_NOON] date pivot", d);
-  let new_d = JSON.parse(d.slice(0,2)) + JSON.parse(d.slice(3,5)) / 60;
-  STATUS.next_noon = new_d;
-  //print("[POOL_NEXT_NOON] new_date pivot", new_d);
-}
 
 // compute the pump schedule for a given duration
 // returns an array of start/stop times in float
@@ -552,6 +652,7 @@ function compute_schedule_filt_pivot(d) {
 
   STATUS.start = JSON.stringify(s[0]);
   STATUS.stop = JSON.stringify(s[1]);
+  STATUS.stop_orig = JSON.stringify(STATUS.next_noon + aprem);
 
   return s;
 }
@@ -667,15 +768,21 @@ function compute_switch_from_schedule(){
   if ((STATUS.sel_mode === "Auto") && ( STATUS.freeze_mode === false )){
     // compute the current switch state according to the schedule
     on = false;
+    time = get_current_time();
     let j = false;
-    for (let i = 0; i < schedule.length; i++) {
+    let schedule24 = STATUS.schedule;
+    if ( schedule24[1] < STATUS.next_noon ){
+      schedule24[1] = schedule24[1] + 24;
+    }
+    for (let i = 0; i < schedule24.length; i++) {
       j = !j;
-      print("[POOL SWITCH] time:", time ,"schedule[i]");
-      if (time >= schedule[i])
+      print("[POOL SWITCH] time:", time ,"schedule24[i]");
+      if (time >= schedule24[i])
         on = j;
     }
     print("[POOL SWITCH] time:", time ,"");
 
+    let calls = [];
     calls.push({method: "Switch.Set", params: {id: 0, on: on}});
     do_call(calls);
     let _state_str = on ? "ON" : "OFF";
@@ -833,46 +940,46 @@ function update_temp_call(){
 
 }
 
-// receives update from Pool Sensor
-// - trigger all temperature and pump updates
-MQTT.subscribe(
-  "ha/pool",
-  function (topic, msg) {
-    STATUS.tick_mqtt++;
-    print("[POOL] mqtt", topic);
-    print("[POOL] MQTT", msg);
-    let obj = null ;
-    if (obj = JSON.parse(msg)){
-      if ((obj.next_noon === undefined) || (obj.temperature === undefined) || (obj.temperature_ext === undefined) )  {
-        return;
-      }
-      update_next_noon(obj.next_noon);
-      STATUS.current_temp = obj.temperature;
-      STATUS.temp_ext = obj.temperature_ext;
-      update_temp(false,false);
-    }else{
-      return;
-    }
-  }
-)
-
-// Shelly.addEventHandler(
-//   function (data) {
-//     if (data.info.event === "toggle"){
-
-//       let result = Shelly.getComponentStatus("switch",0); 
-//       print("[POOL_] GETCOMPONENT-STATUS SWITCH :", result.output);
-
-//       let _state_str = result.output ? "ON" : "OFF";
-//       MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
-
-
-//     }
-//   }
-// );
 
 Shelly.addEventHandler(
   function (data) {
+
+    let re = JSON.stringify(data);
+    print("EVENT", re);
+
+
+    /**
+    * Publish update on switch change on binary sensor
+    */
+    if (
+      data.component === "switch:0" &&
+      typeof data.info.output !== "undefined"
+    ) {
+      let _state_str = data.info.output ? "ON" : "OFF";
+      MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+  
+    }
+
+    // Event pour changement de température
+    //let re = JSON.stringify(data);
+    //print("EVENTTTTTT", re);
+    if (data.info.event === "temperature_change") {
+      if (data.info.id === CONFIG.shelly_id_temp_ext) {
+        // changement de la temperature exterieur
+        STATUS.temp_ext = data.info.tC;
+        print("changement de la temperature exterieur");
+      }
+      if (data.info.id === CONFIG.shelly_id_temp_pool) {
+        // changement de la temperature pool
+        STATUS.current_temp = data.info.tC;
+        print("changement de la temperature piscine");
+      }
+      //process mise à jour des temperature
+      update_temp(false,false);
+      publishState()
+    }
+
+    //event changement du switch et lock
     if (data.info.event === "toggle") {
 
       let result = Shelly.getComponentStatus("switch",0); 
@@ -896,34 +1003,15 @@ Shelly.addEventHandler(
         }
       );
     }
+
   }
 );
+
+
 
 /**
  * Activate periodic check for new day
  * 300000 = 5min
  */
  Timer.set(600000, true, update_new_day);
-
-// Debug...
-
-// Timer.set(
-//   60 * 1000,
-//   true,
-//   function() {
-//     STATUS.tick++;
-//     Shelly.call (
-//       "Sys.GetStatus",
-//       {},
-//       function (result) {
-//         //print("[POOL] DEBUG time : ", result.time, ", update_time : " STATUS.update_time, " , uptime : ", result.uptime);
-//         print("[POOL] DEBUG temp - update_temp_max:", STATUS.temp_max, "update_temp_max_last:", STATUS.update_temp_max_last,"temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
-//         //print("[POOL] DEBUG temp - temp_yesterday:", STATUS.temp_yesterday, "temp_ext:", STATUS.temp_ext);
-
-//         STATUS.time = result.time;
-//         STATUS.uptime = result.uptime;
-//       }
-//     );
-//   }
-// );
 
