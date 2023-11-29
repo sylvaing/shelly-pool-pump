@@ -2,25 +2,24 @@
 Automatic schedule of your pool pump with temperature and freeze mode
 
 This script is intended to  manage your pool pump from a Shelly Plus device.
-He is compatible from firmware 0.11
+He is compatible from firmware 1.0.8
 
-The goal of this script is to make independant filtration system with just monitor and action with your home automation system.
-If there is an issue ( your HA, network, .. ) Shelly device can continu to manage your filtration to have clear water :-)
+The goal of this script is to make independant pool filtration system with just monitor and action with your home automation system.
+If there is an issue ( your HA, network, .. ) Shelly device must continu to manage your filtration to have clear water :-)
  
 Based on shelly script of ggilles with lot of new feature and improvment.
 https://www.shelly-support.eu/forum/index.php?thread/14810-script-randomly-killed-on-shelly-plus-1pm/
 
 Calculate duration filter from current temperature of water, and use max temp of the day and yesterday. The script use sun noon
 to calculate the start of script and the end. the morning and the afternoon are separate by sun noon, and duration are equal.
-manage freeze mode : under 2°C pump will be activate to prevent freeze of water.
+manage freeze mode : under 0.5°C pump will be activate to prevent freeze of water.
 
 Publish informations on MQTT for Home Assistant autodiscover, all sensors and switch are autocreate in your home assitant.
 Before use the script you must configure correcly your Shelly device to connect a your MQTT broker trought web interface or shelly app.
 
-Today, there are no native external sensor, so you must publish temp of water and external temperature on one MQTT topic "ha/pool/...". you have
-configuration package 'pool_pum.yaml' to do this, replace and addapt tou your sensor and configuration.
+Now, there is shelly addon sensor for your shelly plus. You mus use this to connect Two DS18b20 sensor
 
-You must also publish th next_noon on the same topic, to calulate the middle of duration filtration
+This script use also home hassitant to fetch sun noon and manage your filtration.
 
 You have au slider to configure the factor of duration filtration, if you want adapt this, by default its 1, put you can choose what you want.
 
@@ -30,29 +29,34 @@ You have au slider to configure the factor of duration filtration, if you want a
     * start
     * stop
     * duration
+    * pool temp
+    * external temp
+    * yesterday pool temp
+    * max pool temp ( between today and yesterday)
     * display mode : freeze or summer
     * set coefficient of duration
     * status of pump
     * select mode : Auto, Force off,  Force on
-* auto apply Freeze mode if water is under 2°C.
+* auto apply Freeze mode if water is under 0.5°C.
 * customize duration with coefficient of duration
 * choose manually to select Force On or off filtration or choose to use the "IA" :-) of script to manage your pump with Auto mode.
 
+## Script configuration
+
+*CONFIG.freeze_temp : prevent freeze of water under this temp
+* CONFIG.shelly_id_temp_ext: Shelly id of external temp ( see your config on shelly UI
+* CONFIG.shelly_id_temp_pool: Shelly id of water pool temp ( see your config on shelly UI
+* CONFIG.ha_ip: IP of your Home assitant
+* CONFIG.ha_token: long lived access token on your Home assistant API ( see here: https://developers.home-assistant.io/docs/auth_api/#:~:text=Long%2Dlived%20access%20tokens%20can,access%20token%20for%20current%20user. )
 
 ## Configuration of HA:
-
-* you must have
-    * sun integration in your ha to provide sun.next_noon
-    * temperature sensor of your water. I use DS18b20 with an shelly on for me, but you can use what you want
-    * external temperature sensor in order to detect risk of water freeze
-
-* add an automation:
-I publish my file pool_pump.yaml for use with package or rewrite automation as you want.
-You must have an automation which published all necessary temp sensors and sun.next_noon
+* you must have sun integration in your ha to provide sun.next_noon
+* configure long live token to use in the script
+* No automation need
 
 ## Connect shelly to your filtration pump system
 
-The shelly hardware (for me shelly 1 plus) mus replace your hardware clock in your electic panel.
+The shelly hardware (for me shelly 1 plus) must replace your hardware clock in your electic panel.
 **But, be careful, _you don't use_ your shelly schema like for a light.**
 There are pic of current at start of the pump so your shelly can have some problem (reboot) and/or fire if you do that.
 
@@ -64,13 +68,13 @@ In theory your old hardware clock is connected to a relay. your shelly must make
 
 
 ## TODO
-* When Shelly addon temperature will be avaible use this to not use external sensor hardware and make shelly really autonomous if issue on HA or network
-* I wouldlike use Home assitant API to request directly HA by API in order to not configure Automation to publish some informations,
-but the lenght of the token is too long for shelly script. Perhaps in the futur..
-* improve the doc to connect shelly with your hardware.
-* ...
 
+Thanks to shelly team to have fix some bug for me
+* add shelly addon, not available on first releas of this script
+* fix lenght of header when use HTTP call in shelly script, need to fetch HA next_noon
+* fix some bug on mqtt publish and memory.
 
+So the TODO.. improve by tour return and improve the doc.
 
 
 
