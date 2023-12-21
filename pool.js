@@ -136,17 +136,28 @@ function update_next_noon(){
       let re = JSON.stringify(result);
       //print(re);
       let result_json = JSON.parse(result.body);
-      let next_noon = result_json.attributes.next_noon
-      //print("--------------------------------");
-      //print(next_noon);
-      let d = new Date(next_noon);
-      //print(d.toISOString());
-      //print(d.getHours());
-      //print(d.getMinutes());
-      //print(d.getSeconds());
-      let new_d = d.getHours() + d.getMinutes() /60;
-      STATUS.next_noon = new_d;
-      //print("POOL_nn: next_noon"+ STATUS.next_noon);
+      if (result_json.hasOwnProperty("attributes")){
+        if (result_json.attributes.hasOwnProperty("next_noon")){
+          let next_noon = result_json.attributes.next_noon
+          //print("--------------------------------");
+          //print(next_noon);
+          let d = new Date(next_noon);
+          //print(d.toISOString());
+          //print(d.getHours());
+          //print(d.getMinutes());
+          //print(d.getSeconds());
+          let new_d = d.getHours() + d.getMinutes() /60;
+          STATUS.next_noon = new_d;
+          //print("POOL_nn: next_noon"+ STATUS.next_noon);
+        }else {
+          print("ERROR HTTP request on HA next noon: "+error_code);
+          STATUS.next_noon = 14;
+        }
+      }else {
+        print("ERROR HTTP request on HA next noon: "+error_code);
+        STATUS.next_noon = 14;
+      }
+
     }else{
       print("ERROR CODE HTTP request on HA next noon: "+error_code);
       STATUS.next_noon = 14;
