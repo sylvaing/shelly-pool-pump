@@ -48,7 +48,7 @@ print("[POOL] start");
   shelly_id: null,
   shelly_mac: null,
   shelly_fw_id: null,
-  device_name: "POOL_PUMP_TEST",
+  device_name: "POOL_PUMP",
   ha_mqtt_ad: "homeassistant",
   ha_dev_type: {
     name: "",
