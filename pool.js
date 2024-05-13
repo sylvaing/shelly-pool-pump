@@ -32,11 +32,6 @@
  * 
  */
 
-
-print("[POOL] start");
-
-
-
 /**
  * @typedef {"switch" | "binary_sensor" | "sensor"} HADeviceType
  * @typedef {"config"|"stat"|"cmd"} HATopicType
@@ -166,19 +161,6 @@ function update_next_noon(){
 });
 
 }
-
-update_next_noon();
-
-Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
-  CONFIG.shelly_id = result.id;
-  CONFIG.shelly_mac = result.mac;
-  CONFIG.shelly_fw_id = result.fw_id;
-  CONFIG.device_name = result.name || CONFIG.device_name;
-  CONFIG.ha_dev_type.name = CONFIG.device_name;
-  CONFIG.ha_dev_type.ids[0] = CONFIG.shelly_id;
-  CONFIG.ha_dev_type.sw = CONFIG.shelly_fw_id;
-  initMQTT();
-});
 
 /**
  * Construct config topic
@@ -374,11 +356,6 @@ function publishState() {
 
   
 }
-
-/**
- * Activate periodic updates
- */
-if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState);
 
 
 /**
@@ -1018,11 +995,33 @@ Shelly.addEventHandler(
   }
 );
 
-
-
 /**
- * Activate periodic check for new day
- * 300000 = 5min
+ * Main.
+ * 
+ * We need to add an initial delay so the script is able to run on startup.
+ * Indeed, according to Shelly support, calling Shelly.Call immediately after the device boot causes the whole script to fail.
  */
- Timer.set(600000, true, update_new_day);
+Timer.set(10000, false, function () {
 
+  print("[POOL] start");
+
+  update_next_noon();
+
+  Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
+    CONFIG.shelly_id = result.id;
+    CONFIG.shelly_mac = result.mac;
+    CONFIG.shelly_fw_id = result.fw_id;
+    CONFIG.device_name = result.name || CONFIG.device_name;
+    CONFIG.ha_dev_type.name = CONFIG.device_name;
+    CONFIG.ha_dev_type.ids[0] = CONFIG.shelly_id;
+    CONFIG.ha_dev_type.sw = CONFIG.shelly_fw_id;
+    initMQTT();
+  });
+
+   // Activate periodic updates
+  if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState);
+
+  // Activate periodic check for new day
+  // 300000 = 5min
+  Timer.set(600000, true, update_new_day);
+}, null);
