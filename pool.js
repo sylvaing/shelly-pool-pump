@@ -1022,7 +1022,7 @@ Timer.set(10000, false, function () {
    // Activate periodic updates
   if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState);
 
-  // Susbcribe to events.
+  // Subscribe to events.
   subscribe_to_events();
 
   // Activate periodic check for new day
