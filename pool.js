@@ -32,11 +32,6 @@
  * 
  */
 
-
-print("[POOL] start");
-
-
-
 /**
  * @typedef {"switch" | "binary_sensor" | "sensor"} HADeviceType
  * @typedef {"config"|"stat"|"cmd"} HATopicType
@@ -166,19 +161,6 @@ function update_next_noon(){
 });
 
 }
-
-update_next_noon();
-
-Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
-  CONFIG.shelly_id = result.id;
-  CONFIG.shelly_mac = result.mac;
-  CONFIG.shelly_fw_id = result.fw_id;
-  CONFIG.device_name = result.name || CONFIG.device_name;
-  CONFIG.ha_dev_type.name = CONFIG.device_name;
-  CONFIG.ha_dev_type.ids[0] = CONFIG.shelly_id;
-  CONFIG.ha_dev_type.sw = CONFIG.shelly_fw_id;
-  initMQTT();
-});
 
 /**
  * Construct config topic
@@ -374,11 +356,6 @@ function publishState() {
 
   
 }
-
-/**
- * Activate periodic updates
- */
-if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState);
 
 
 /**
@@ -951,78 +928,104 @@ function update_temp_call(){
 
 }
 
-
-Shelly.addEventHandler(
-  function (data) {
-
-    let re = JSON.stringify(data);
-    print("EVENT", re);
-
-
-    /**
-    * Publish update on switch change on binary sensor
-    */
-    if (
-      data.component === "switch:0" &&
-      typeof data.info.output !== "undefined"
-    ) {
-      let _state_str = data.info.output ? "ON" : "OFF";
-      MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+function subscribe_to_events() {
+  Shelly.addEventHandler(
+    function (data) {
+  
+      let re = JSON.stringify(data);
+      print("EVENT", re);
+  
+  
+      /**
+      * Publish update on switch change on binary sensor
+      */
+      if (
+        data.component === "switch:0" &&
+        typeof data.info.output !== "undefined"
+      ) {
+        let _state_str = data.info.output ? "ON" : "OFF";
+        MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+    
+      }
+  
+      // Event pour changement de température
+      //let re = JSON.stringify(data);
+      //print("EVENTTTTTT", re);
+      if (data.info.event === "temperature_change") {
+        if (data.info.id === CONFIG.shelly_id_temp_ext) {
+          // changement de la temperature exterieur
+          STATUS.temp_ext = data.info.tC;
+          print("changement de la temperature exterieur");
+        }
+        if (data.info.id === CONFIG.shelly_id_temp_pool) {
+          // changement de la temperature pool
+          STATUS.current_temp = data.info.tC;
+          print("changement de la temperature piscine");
+        }
+        //process mise à jour des temperature
+        update_temp(false,false);
+        publishState()
+      }
+  
+      //event changement du switch et lock
+      if (data.info.event === "toggle") {
+  
+        let result = Shelly.getComponentStatus("switch",0); 
+        print("[POOL_] TOGGLE EVENT GETCOMPONENT-STATUS SWITCH :", result.output);
+  
+        let _state_str = result.output ? "ON" : "OFF";
+        MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
+  
+        STATUS.tick_lock++;
+        print("[POOL] disable temp", STATUS.tick_lock);
+  
+        if (STATUS.disable_temp !== null)
+          Timer.clear(STATUS.disable_temp);
+  
+        STATUS.disable_temp = Timer.set(
+          600 * 1000,
+          false,
+          function () {
+            print("[POOL] re-enable temp");
+            STATUS.disable_temp = null;
+          }
+        );
+      }
   
     }
-
-    // Event pour changement de température
-    //let re = JSON.stringify(data);
-    //print("EVENTTTTTT", re);
-    if (data.info.event === "temperature_change") {
-      if (data.info.id === CONFIG.shelly_id_temp_ext) {
-        // changement de la temperature exterieur
-        STATUS.temp_ext = data.info.tC;
-        print("changement de la temperature exterieur");
-      }
-      if (data.info.id === CONFIG.shelly_id_temp_pool) {
-        // changement de la temperature pool
-        STATUS.current_temp = data.info.tC;
-        print("changement de la temperature piscine");
-      }
-      //process mise à jour des temperature
-      update_temp(false,false);
-      publishState()
-    }
-
-    //event changement du switch et lock
-    if (data.info.event === "toggle") {
-
-      let result = Shelly.getComponentStatus("switch",0); 
-      print("[POOL_] TOGGLE EVENT GETCOMPONENT-STATUS SWITCH :", result.output);
-
-      let _state_str = result.output ? "ON" : "OFF";
-      MQTT.publish(buildMQTTStateCmdTopics("binary_sensor", "state"), _state_str);
-
-      STATUS.tick_lock++;
-      print("[POOL] disable temp", STATUS.tick_lock);
-
-      if (STATUS.disable_temp !== null)
-        Timer.clear(STATUS.disable_temp);
-
-      STATUS.disable_temp = Timer.set(
-        600 * 1000,
-        false,
-        function () {
-          print("[POOL] re-enable temp");
-          STATUS.disable_temp = null;
-        }
-      );
-    }
-
-  }
-);
-
-
+  );
+}
 
 /**
- * Activate periodic check for new day
- * 300000 = 5min
+ * Main.
+ * 
+ * We need to add an initial delay so the script is able to run on startup.
+ * Indeed, according to Shelly support, calling Shelly.Call immediately after the device boot causes the whole script to fail.
  */
- Timer.set(600000, true, update_new_day);
+Timer.set(10000, false, function () {
 
+  print("[POOL] start");
+
+  update_next_noon();
+
+  Shelly.call("Shelly.GetDeviceInfo", {}, function (result) {
+    CONFIG.shelly_id = result.id;
+    CONFIG.shelly_mac = result.mac;
+    CONFIG.shelly_fw_id = result.fw_id;
+    CONFIG.device_name = result.name || CONFIG.device_name;
+    CONFIG.ha_dev_type.name = CONFIG.device_name;
+    CONFIG.ha_dev_type.ids[0] = CONFIG.shelly_id;
+    CONFIG.ha_dev_type.sw = CONFIG.shelly_fw_id;
+    initMQTT();
+  });
+
+   // Activate periodic updates
+  if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState);
+
+  // Subscribe to events.
+  subscribe_to_events();
+
+  // Activate periodic check for new day
+  // 300000 = 5min
+  Timer.set(600000, true, update_new_day);
+}, null);
