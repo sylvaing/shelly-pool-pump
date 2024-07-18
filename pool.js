@@ -910,6 +910,9 @@ function update_temp_call(){
         update_pump(STATUS.temp, STATUS.temp_max, STATUS.update_time);
         STATUS.update_time_last = STATUS.update_time;
         STATUS.update_temp_max_last = STATUS.temp_max;
+        Shelly.call("KVS.Set", {key: "pool_temp_max", value: STATUS.temp_max}, function (result,error_code,error_message) {
+          print(error_code);
+        });
       // }
       // else {
       //   STATUS.tick_pump_skip++;
@@ -1018,6 +1021,17 @@ Timer.set(10000, false, function () {
     CONFIG.ha_dev_type.sw = CONFIG.shelly_fw_id;
     initMQTT();
   });
+
+  //Check KVS Value for pool_temp_max
+  Shelly.call("KVS.Get", {key: "pool_temp_max"}, function (result,error_code,error_message) {
+    if (error_code != 0){
+      print ("Error no KVS of pool_temp_max -- error_code : ", error_code );
+    }else {
+        print("KVS: Set temp max value to", result.value);
+        STATUS.temp_max = result.value;
+    }
+  });
+
 
    // Activate periodic updates
   if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState);
