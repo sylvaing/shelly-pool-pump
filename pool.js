@@ -568,30 +568,67 @@ function initMQTT() {
 
 
 
-
-/////////
-
 // compute duration of filtration for a given max temperature
 // duration is returned in float format (1.25 -> 1h 15mn)
 function compute_duration_filt(t) {
-//  if (t < 5)
-//    return 1* STATUS.coeff;
-  if (t < 4)
-      return 0.5 * STATUS.coeff;            // ->0.5
-  if (t < 10)
-//    return ((t/5)* STATUS.coeff);           // 1 -> 2
-    return ((t/7)* STATUS.coeff);
-  if (t < 12)
-    return ((t-8)* STATUS.coeff);           // 2 -> 4
-  if (t < 16)
-    return ((t/2-2)* STATUS.coeff);         // 4 -> 6
-  if (t < 24)
-    return ((t/4+2)* STATUS.coeff);         // 6 -> 8
-  if (t < 27)
-    return ((t*4/3-24)* STATUS.coeff)       // 8 -> 12
-  if (t < 30)
-    return ((t*4 - 96)* STATUS.coeff);      // 12 -> 24
-  return 24;
+  let result = 0;
+  if (t < 4){
+    result = 0.5 * STATUS.coeff;            // ->0.5
+    if ( result > 24 ){
+      return 23;
+    }else{
+      return result;
+    }
+  }
+  if (t < 10){
+    result = ((t/7)* STATUS.coeff);
+    if ( result > 24 ){
+      return 23;
+    }else{
+      return result;
+    }
+  }
+  if (t < 12){
+    result = ((t-8)* STATUS.coeff);           // 2 -> 4
+    if ( result > 24 ){
+      return 23;
+    }else{
+      return result;
+    }
+  }  
+  if (t < 16){
+    result = ((t/2-2)* STATUS.coeff);         // 4 -> 6
+    if ( result > 24 ){
+      return 23;
+    }else{
+      return result;
+    }
+  }
+  if (t < 24){
+    result = ((t/4+2)* STATUS.coeff);         // 6 -> 8
+    if ( result > 24 ){
+      return 23;
+    }else{
+      return result;
+    }
+  }
+  if (t < 27){
+    result = ((t*4/3-24)* STATUS.coeff);       // 8 -> 12
+    if ( result > 24 ){
+      return 23;
+    }else{
+      return result;
+    }
+  }
+  if (t < 30){
+    result = (t*4 - 96)* STATUS.coeff;
+    if ( result > 24 ){
+      return 23;
+    }else{
+      return result;
+    }
+  }
+  return 23;
 }
 
 
@@ -910,6 +947,9 @@ function update_temp_call(){
         update_pump(STATUS.temp, STATUS.temp_max, STATUS.update_time);
         STATUS.update_time_last = STATUS.update_time;
         STATUS.update_temp_max_last = STATUS.temp_max;
+        Shelly.call("KVS.Set", {key: "pool_temp_max", value: STATUS.temp_max}, function (result,error_code,error_message) {
+          print(error_code);
+        });
       // }
       // else {
       //   STATUS.tick_pump_skip++;
@@ -1018,6 +1058,17 @@ Timer.set(10000, false, function () {
     CONFIG.ha_dev_type.sw = CONFIG.shelly_fw_id;
     initMQTT();
   });
+
+  //Check KVS Value for pool_temp_max
+  Shelly.call("KVS.Get", {key: "pool_temp_max"}, function (result,error_code,error_message) {
+    if (error_code != 0){
+      print ("Error no KVS of pool_temp_max -- error_code : ", error_code );
+    }else {
+        print("KVS: Set temp max value to", result.value);
+        STATUS.temp_max = result.value;
+    }
+  });
+
 
    // Activate periodic updates
   if(CONFIG.update_period > 0) Timer.set(CONFIG.update_period, true, publishState);
