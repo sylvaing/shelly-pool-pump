@@ -4,6 +4,7 @@
 //   node tools/shelly.mjs status
 //   node tools/shelly.mjs deploy pool.js --name pool_v2_dryrun --dry-run [--autostart]
 //   node tools/shelly.mjs compare <script id>      v2 dry-run decisions vs the running v1
+//   node tools/shelly.mjs site ['{"water_id":102}']    show or replace KVS pool_site
 //   node tools/shelly.mjs eval <script id> "<js expression>"
 //   node tools/shelly.mjs logs [seconds] [filter]
 //   node tools/shelly.mjs stop|start|delete <script id>
@@ -73,6 +74,17 @@ async function deploy(file, opts) {
   return id;
 }
 
+// Installation settings (KVS "pool_site"); the script reads them when it starts.
+async function site(json) {
+  if (json !== undefined) {
+    const value = JSON.parse(json);
+    await rpc("KVS.Set", { key: "pool_site", value });
+    console.log("pool_site saved; restart the script to apply it");
+  }
+  const r = await rpc("KVS.Get", { key: "pool_site" }).catch(() => null);
+  console.log("pool_site = " + (r ? JSON.stringify(r.value) : "(not set: defaults)"));
+}
+
 async function evalIn(id, expr) {
   return (await rpc("Script.Eval", { id: Number(id), code: expr })).result;
 }
@@ -124,11 +136,12 @@ try {
   if (cmd === "status") await status();
   else if (cmd === "deploy") await deploy(args[0], { name: opt("--name") || "pool_v2", dryRun: flag("--dry-run"), autostart: flag("--autostart"), start: !flag("--no-start") });
   else if (cmd === "compare") await compare(args[0]);
+  else if (cmd === "site") await site(args[0]);
   else if (cmd === "eval") console.log(await evalIn(args[0], args[1]));
   else if (cmd === "logs") await logs(Number(args[0] || 30), args[1]);
   else if (cmd === "stop" || cmd === "start") console.log(await rpc(cmd === "stop" ? "Script.Stop" : "Script.Start", { id: Number(args[0]) }));
   else if (cmd === "delete") console.log(await rpc("Script.Delete", { id: Number(args[0]) }));
-  else console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 12).join("\n"));
+  else console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 13).join("\n"));
 } catch (e) {
   console.error(e.message);
   process.exit(1);

@@ -2,7 +2,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { DEV, at, hm, boot, reboot, run, runUntil, S, send, transitions, onSeconds, noUnexpectedErrors } = require("./helpers");
+const { DEV, TIME_URLS, at, hm, boot, reboot, run, runUntil, S, send, transitions, onSeconds, noUnexpectedErrors } = require("./helpers");
 
 const dayIndex = (d) => Math.floor((at(d, 0) + 7200) / 86400);
 const state = (o) =>
@@ -134,7 +134,7 @@ test("5. reboot with network: settings and max restored, no relay bounce", () =>
 });
 
 test("6a. power cut, no network: estimated clock, then real clock turns the pump off", () => {
-  let sim = boot({ clockAt0: at(0, 10), relay: true, kvs: { pool_cfg: cfg(), pool_state: state({ tmax_yesterday: 24.5, last_time: at(0, 9) }) } });
+  let sim = boot({ clockAt0: at(0, 10), relay: true, kvs: { pool_site: { time_urls: TIME_URLS }, pool_cfg: cfg(), pool_state: state({ tmax_yesterday: 24.5, last_time: at(0, 9) }) } });
   runUntil(sim, at(0, 14, 5), summerWorld(() => 24.5));
   // Out for 5 h: back at 19:05, after the 18:04 stop, but the estimate says ~14:05.
   sim = reboot(sim, 5 * 3600, { ntp: false, http: () => null });
@@ -178,7 +178,7 @@ test("7. first boot without any data or clock: runs at once, then every 24 h", (
 });
 
 test("8. NTP down: clock from the HTTP Date header (box, then Home Assistant)", () => {
-  let sim = boot({ clockAt0: at(0, 10), ntp: false, kvs: { pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) } });
+  let sim = boot({ clockAt0: at(0, 10), ntp: false, kvs: { pool_site: { time_urls: TIME_URLS }, pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) } });
   run(sim, 200);
   const get = sim.rpcLog.find((r) => r.method === "HTTP.GET");
   assert.equal(get.params.url, "http://192.168.1.1/x404");
@@ -191,14 +191,14 @@ test("8. NTP down: clock from the HTTP Date header (box, then Home Assistant)", 
     clockAt0: at(0, 10),
     ntp: false,
     http: (url) => (url.indexOf("192.168.1.1/") >= 0 ? null : { code: 401, headers: { Date: new Date(sim.trueUnix() * 1000).toUTCString() } }),
-    kvs: { pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) },
+    kvs: { pool_site: { time_urls: TIME_URLS }, pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) },
   });
   run(sim, 500);
   assert.deepEqual(sim.rpcLog.filter((r) => r.method === "HTTP.GET").map((r) => r.params.url), ["http://192.168.1.1/x404", "http://192.168.1.105:8123/api/"]);
   assert.equal(st(sim, "S.clock.src"), "http");
 
   // Garbage header: refused, reported.
-  sim = boot({ clockAt0: at(0, 10), ntp: false, http: () => ({ code: 200, headers: { Date: "yesterday" } }) });
+  sim = boot({ clockAt0: at(0, 10), ntp: false, http: () => ({ code: 200, headers: { Date: "yesterday" } }), kvs: { pool_site: { time_urls: TIME_URLS } } });
   run(sim, 200);
   assert.ok(!sim.rpcLog.some((r) => r.method === "Sys.SetTime"));
   assert.ok(sim.errors().some((l) => l.msg.indexOf("invalid Date header") >= 0));
@@ -418,5 +418,69 @@ test("16. chaos: random API failures never stop the script", () => {
   assert.equal(sim.relay, false);
   assert.ok(sim.timers.filter((t) => t.active).length <= 2, "timers");
   assert.ok(st(sim, "S.rpc.q.length - S.rpc.head") === 0, "RPC queue drained");
+  assertAlive(sim);
+});
+
+// --------------------------------------------------------------------------
+// v2.1: installation settings in KVS "pool_site"
+
+test("17. custom site: probe ids, name and discovery prefix from pool_site", () => {
+  const sim = boot({
+    clockAt0: at(0, 12),
+    temps: { 102: 3, 103: 21.5 },
+    kvs: { pool_site: { air_id: 102, water_id: 103, name: "piscine", ha_prefix: "ha" }, pool_cfg: cfg(), pool_state: state({ last_time: at(0, 11) }) },
+  });
+  run(sim, 120);
+  assert.equal(st(sim, "S.air"), 3);
+  assert.equal(st(sim, "S.water"), 21.5);
+  const topics = Object.keys(sim.mqtt.retained).filter((t) => t.indexOf("/config") > 0);
+  assert.equal(topics.length, 17);
+  assert.ok(topics.every((t) => t.indexOf("ha/") === 0), topics[0]);
+  const coeff = JSON.parse(sim.mqtt.retained["ha/number/" + DEV + "/coeff/config"]);
+  assert.equal(coeff.unique_id, "441793947564:piscine_coeff");
+  assert.equal(coeff.device.name, "piscine");
+  assert.deepEqual(noUnexpectedErrors(sim), []);
+});
+
+test("18. MQTT disabled: no subscription, no publication, the pump is still driven", () => {
+  const sim = boot({ clockAt0: at(0, 10), relay: true, kvs: { pool_site: { mqtt: false }, pool_cfg: cfg(), pool_state: state({ tmax_yesterday: 24.5, last_time: at(0, 9) }) } });
+  runUntil(sim, at(0, 20), summerWorld(() => 24.5));
+  assert.equal(sim.mqtt.subs.length, 0);
+  assert.equal(sim.mqtt.published.length, 0);
+  assertTime(firstChange(sim, false, at(0, 10)), at(0, 18, 4), 3, "stop");
+});
+
+test("19. HA discovery disabled: state and commands over MQTT, no discovery", () => {
+  const sim = boot({ clockAt0: at(0, 10), kvs: { pool_site: { ha_discovery: false }, pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) } });
+  run(sim, 120);
+  assert.equal(sim.mqtt.published.filter((p) => p.topic.indexOf("/config") > 0).length, 0);
+  assert.ok(sim.lastState(), "state published");
+  send(sim, "coeff", "1.4");
+  assert.equal(st(sim, "S.cfg.coeff"), 1.4);
+});
+
+test("20. no location: reported, solar noon assumed for longitude 0", () => {
+  const sim = boot({ clockAt0: at(0, 12), location: { tz: "Europe/Paris", lat: null, lon: null }, kvs: { pool_cfg: cfg(), pool_state: state({ last_time: at(0, 11) }) } });
+  run(sim, 120);
+  assert.equal(sim.lastState().diag, "position_absente");
+  assert.ok(sim.errors().some((l) => l.msg.indexOf("no longitude") >= 0));
+  assert.equal(JSON.parse(sim.mqtt.retained[DEV + "/pool/diag"]).longitude, null);
+  // pool_site longitude wins over a missing location
+  const sim2 = boot({ clockAt0: at(0, 12), location: null, kvs: { pool_site: { longitude: 1.2299 }, pool_cfg: cfg(), pool_state: state({ last_time: at(0, 11) }) } });
+  run(sim2, 120);
+  assert.equal(sim2.lastState().diag, "ok");
+});
+
+test("21. default site: no HTTP clock fallback, invalid pool_site fields reported", () => {
+  let sim = boot({ clockAt0: at(0, 10), ntp: false, kvs: { pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) } });
+  run(sim, 900);
+  assert.equal(sim.rpcLog.filter((r) => r.method === "HTTP.GET").length, 0, "no URL configured: no request");
+  sim = boot({ clockAt0: at(0, 10), kvs: { pool_site: { water_id: 7, name: "Pool Pump!", colour: "blue", air_id: 104 }, pool_cfg: cfg() } });
+  sim.temps[104] = 12;
+  run(sim, 60);
+  assert.equal(st(sim, "S.site.water_id"), 101, "invalid id ignored");
+  assert.equal(st(sim, "S.site.name"), "pool_pump", "invalid name ignored");
+  assert.equal(st(sim, "S.site.air_id"), 104, "valid field kept");
+  assert.ok(sim.errors().some((l) => l.msg.indexOf("pool_site") >= 0));
   assertAlive(sim);
 });

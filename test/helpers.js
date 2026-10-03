@@ -5,6 +5,8 @@ const { createSim } = require("./shelly_sim");
 
 const CODE = fs.readFileSync(path.join(__dirname, "..", "pool.js"), "utf8");
 const DEV = "shellyplus1-441793947564";
+// Fallback clock URLs of the reference installation (KVS pool_site).
+const TIME_URLS = ["http://192.168.1.1/x404", "http://192.168.1.105:8123/api/"];
 const OFFSET = 7200; // CEST, valid for the simulated dates (early October 2026)
 const MIDNIGHT = 1790978400; // 2026-10-03 00:00 local
 
@@ -98,4 +100,4 @@ function noUnexpectedErrors(sim, allowed) {
   return sim.errors().filter((l) => !allowed.some((a) => l.msg.indexOf(a) >= 0)).map((l) => l.msg);
 }
 
-module.exports = { CODE, DEV, MIDNIGHT, at, hm, boot, reboot, run, runUntil, S, send, transitions, onSeconds, noUnexpectedErrors };
+module.exports = { CODE, DEV, TIME_URLS, MIDNIGHT, at, hm, boot, reboot, run, runUntil, S, send, transitions, onSeconds, noUnexpectedErrors };

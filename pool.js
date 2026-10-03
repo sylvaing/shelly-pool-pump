@@ -13,24 +13,34 @@
  * - Freeze protection: short pump cycles when the still water in the pipe
  *   gets cold; it can only turn the pump on, never off.
  *
- * Settings live in KVS "pool_cfg", daily temperatures and the last known time
- * in KVS "pool_state". Engine limits (Shelly 1.7.1): no arrow functions, no
- * template literals, no Array.shift, 5 timers, ~25 KB heap shared by all scripts.
+ * KVS keys: "pool_site" (installation settings, written by the user, optional),
+ * "pool_cfg" (user settings, also set from HA), "pool_state" (daily temperatures,
+ * last known time). Engine limits (Shelly 1.7.1): no arrow functions, no template
+ * literals, no Array.shift, 5 timers, ~25 KB heap shared by all scripts.
  */
 
 // ---------------------------------------------------------------------------
 // 1. Constants
 // ---------------------------------------------------------------------------
 
-let VERSION = "2.0.0";
+let VERSION = "2.1.0";
 let DRY_RUN = false; // log decisions only: no relay, KVS, schedule, clock or MQTT writes
 let DEBUG = false;
 
-let SWITCH_ID = 0;
-let AIR_ID = 100; // DS18B20 in the technical room (HA name "Exterieur")
-let WATER_ID = 101; // DS18B20 on the pipe: pool water when running, still water when stopped
-let DEVICE_NAME = "pool_pump"; // part of the HA unique_ids, never change it
-let DEFAULT_LON = 1.2299;
+// Installation settings. Change them without editing the code by storing a JSON object
+// with only the fields to override in KVS "pool_site", then restart the script, e.g.
+//   {"water_id":102,"time_urls":["http://192.168.1.1/x404"]}
+let SITE_DEFAULTS = {
+  switch_id: 0, // relay driving the pump contactor
+  air_id: 100, // DS18B20 in the air around the pump and filter
+  water_id: 101, // DS18B20 on the pipe: pool water when running, still water when stopped
+  name: "pool_pump", // HA device name and unique_id prefix: keep it once entities exist
+  longitude: null, // null: use the Shelly location (Settings > Location)
+  time_urls: [], // fallback clock: URLs answering with a small body and a Date header
+  mqtt: true, // publish state and accept commands over MQTT
+  ha_discovery: true, // announce the entities to Home Assistant
+  ha_prefix: "homeassistant",
+};
 
 let BOOT_DELAY_MS = 10000;
 let TICK_MS = 10000;
@@ -44,10 +54,10 @@ let STATE_PUBLISH_S = 60;
 let DIAG_PUBLISH_S = 300;
 let DISCOVERY_PER_TICK = 4;
 
-// Fallback clock: Date header of small HTTP answers. Never point this at a
-// large page, its body would exhaust the script memory and kill the script.
-let HTTP_TIME_URLS = ["http://192.168.1.1/x404", "http://192.168.1.105:8123/api/"];
+// Fallback clock (site time_urls): never point it at a large page, its body would
+// exhaust the script memory and kill the script.
 let HTTP_TIME_DELAY_S = 120;
+let MAX_TIME_URLS = 3;
 let HTTP_TIME_RETRY_S = 300;
 let MIN_VALID_TIME = 1767225600; // 2026-01-01
 let MAX_VALID_TIME = 4102444800; // 2100-01-01
@@ -101,6 +111,7 @@ let S = {
   loading: false,
   kvsBlocked: false, // set when KVS could not be read: never overwrite it with defaults
   migrate: false,
+  site: SITE_DEFAULTS,
   cfg: null,
   st: null,
   cfgDirtyAt: null,
@@ -112,7 +123,9 @@ let S = {
   fw: "",
   scriptId: 0,
   availTopic: "",
-  lon: DEFAULT_LON,
+  locationLon: null, // from the Shelly settings
+  lon: 0,
+  lonMissing: false,
   up: 0,
   bootUp: 0,
 
@@ -132,7 +145,7 @@ let S = {
 
   rpc: { q: [], head: 0, busy: null, seq: 0 },
   http: { nextAt: 0, idx: 0 },
-  mqtt: { disc: -1, lastState: "", stateAt: 0, diagKey: "", diagAt: 0, connects: 0 },
+  mqtt: { setup: false, disc: -1, lastState: "", stateAt: 0, diagKey: "", diagAt: 0, connects: 0 },
   schedulesDone: false,
   diag: { errors: 0, lastErr: "", lastErrTs: null, kvsWrites: 0 },
 };
@@ -250,6 +263,52 @@ function validateState(raw, legacyTmax) {
     st.tmax_yesterday = cleanTemp(typeof legacyTmax === "string" ? Number(legacyTmax) : legacyTmax);
   }
   return { st: st, bad: bad };
+}
+
+function isName(x, extra) {
+  if (typeof x !== "string" || x.length === 0 || x.length > 32) return false;
+  for (let i = 0; i < x.length; i++) {
+    let c = x[i];
+    let ok = (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c === "_" || extra.indexOf(c) >= 0;
+    if (!ok) return false;
+  }
+  return true;
+}
+
+function isId(x, min, max) {
+  return isNum(x) && Math.floor(x) === x && x >= min && x <= max;
+}
+
+// Returns { site, bad }: defaults overridden by the valid fields of KVS "pool_site".
+function validateSite(raw) {
+  let src = asObject(raw);
+  let bad = raw !== undefined && raw !== null && src === null;
+  let site = {};
+  for (let k in SITE_DEFAULTS) site[k] = SITE_DEFAULTS[k];
+  if (src === null) return { site: site, bad: bad };
+  let checks = {
+    switch_id: isId(src.switch_id, 0, 3),
+    air_id: isId(src.air_id, 100, 199),
+    water_id: isId(src.water_id, 100, 199),
+    name: isName(src.name, ""),
+    longitude: src.longitude === null || (isNum(src.longitude) && Math.abs(src.longitude) <= 180),
+    time_urls: Array.isArray(src.time_urls) && src.time_urls.length <= MAX_TIME_URLS,
+    mqtt: typeof src.mqtt === "boolean",
+    ha_discovery: typeof src.ha_discovery === "boolean",
+    ha_prefix: isName(src.ha_prefix, "/-"),
+  };
+  if (checks.time_urls) {
+    for (let i = 0; i < src.time_urls.length; i++) {
+      let u = src.time_urls[i];
+      if (typeof u !== "string" || u.indexOf("http") !== 0) checks.time_urls = false;
+    }
+  }
+  for (let k in src) {
+    if (checks[k] === undefined) bad = true; // unknown field
+    else if (checks[k]) site[k] = src[k];
+    else bad = true;
+  }
+  return { site: site, bad: bad };
 }
 
 function referenceTemp(today, yesterday) {
@@ -459,7 +518,7 @@ function loadStorage() {
   if (S.up - S.bootUp > LOAD_TIMEOUT_S) {
     noteError("KVS", "load failed, running on defaults without saving");
     S.kvsBlocked = true;
-    applyLoaded(validateCfg(null), validateState(null, null), false, false);
+    applyLoaded(validateSite(null), validateCfg(null), validateState(null, null), false, false);
     return;
   }
   S.loading = true;
@@ -486,6 +545,7 @@ function onStorageLoaded(res, code, msg) {
   }
   let kv = kvsValues(res);
   applyLoaded(
+    validateSite(kv.pool_site),
     validateCfg(kv.pool_cfg),
     validateState(kv.pool_state, kv.pool_temp_max),
     kv.pool_cfg === undefined,
@@ -493,7 +553,10 @@ function onStorageLoaded(res, code, msg) {
   );
 }
 
-function applyLoaded(c, s, newCfg, newState) {
+function applyLoaded(site, c, s, newCfg, newState) {
+  S.site = site.site;
+  if (site.bad) noteError("KVS", "pool_site has invalid or unknown fields, defaults used for them");
+  applySite();
   S.cfg = c.cfg;
   S.st = s.st;
   if (c.bad) noteError("KVS", "pool_cfg had invalid fields, defaults used");
@@ -505,6 +568,7 @@ function applyLoaded(c, s, newCfg, newState) {
   if (newCfg || c.bad) S.cfgDirtyAt = S.up;
   if (newState) S.migrate = true;
   if (newState || s.bad) saveState("init");
+  setupMqtt();
   log(
     "loaded: mode=" + S.cfg.mode + " coeff=" + S.cfg.coeff + " tmax today=" + S.st.tmax_today +
       " yesterday=" + S.st.tmax_yesterday + (newState ? " (first run)" : "")
@@ -516,6 +580,18 @@ function applyLoaded(c, s, newCfg, newState) {
 function estimateBase(st, up) {
   if (st.last_time === null) return null;
   return up >= st.last_up ? st.last_time - st.last_up : st.last_time;
+}
+
+// Settings that depend on pool_site: relay state, longitude.
+function applySite() {
+  let sw = Shelly.getComponentStatus("switch", S.site.switch_id);
+  if (sw === null) noteError("site", "switch " + S.site.switch_id + " not found");
+  S.relay = sw ? sw.output === true : false;
+  S.relayChangeUp = S.up;
+  let lon = S.site.longitude !== null ? S.site.longitude : S.locationLon;
+  S.lonMissing = lon === null;
+  S.lon = lon === null ? 0 : lon;
+  if (S.lonMissing) noteError("site", "no longitude: set the Shelly location, solar noon assumed at 12:00 UTC");
 }
 
 function canWrite() {
@@ -593,10 +669,10 @@ function readTemp(id) {
 }
 
 function readInputs() {
-  S.air = readTemp(AIR_ID);
-  S.water = readTemp(WATER_ID);
+  S.air = readTemp(S.site.air_id);
+  S.water = readTemp(S.site.water_id);
   if (S.air !== null) S.lastAir = S.air;
-  let sw = Shelly.getComponentStatus("switch", SWITCH_ID);
+  let sw = Shelly.getComponentStatus("switch", S.site.switch_id);
   if (sw) {
     if (sw.output !== S.relay) relayChanged(sw.output === true, "poll");
     S.relayTemp = sw.temperature && isNum(sw.temperature.tC) ? sw.temperature.tC : null;
@@ -684,7 +760,7 @@ function applyRelay(on, byFreeze) {
   }
   log("relay " + onOff(on) + " (" + why + ")");
   S.pending = { on: on, until: S.up + PENDING_TIMEOUT_S };
-  rpc("Switch.Set", { id: SWITCH_ID, on: on }, onSwitchSet);
+  rpc("Switch.Set", { id: S.site.switch_id, on: on }, onSwitchSet);
 }
 
 function onSwitchSet(res, code, msg) {
@@ -728,6 +804,7 @@ function diagState() {
   if (S.freeze.active) return "hors_gel";
   if (S.water === null) return "sonde_eau_hs";
   if (S.air === null) return "sonde_air_hs";
+  if (S.lonMissing) return "position_absente";
   if (S.clock.src === "none") return "attente_heure";
   if (S.clock.src === "estimated") return "heure_estimee";
   return "ok";
@@ -772,6 +849,7 @@ function diagJson() {
     errors: S.diag.errors,
     kvs_writes: S.diag.kvsWrites,
     kvs_blocked: S.kvsBlocked,
+    longitude: S.lonMissing ? null : S.lon,
     mqtt_connects: S.mqtt.connects,
     mem_used: mem ? mem.mem_used : null,
     mem_peak: mem ? mem.mem_peak : null,
@@ -784,13 +862,13 @@ function diagJson() {
 function baseEntity(uidSuffix, name) {
   return {
     device: {
-      name: DEVICE_NAME,
+      name: S.site.name,
       identifiers: [S.deviceId],
       model: "Shelly-virtual-sensors",
       manufacturer: "Isynet",
       sw_version: VERSION + " / fw " + S.fw,
     },
-    unique_id: S.mac + ":" + DEVICE_NAME + uidSuffix,
+    unique_id: S.mac + ":" + S.site.name + uidSuffix,
     name: name,
     availability_topic: S.availTopic,
     payload_available: "true",
@@ -888,13 +966,17 @@ function publishDiscoveryBatch() {
       S.mqtt.stateAt = 0;
       return;
     }
-    MQTT.publish("homeassistant/" + d[0] + "/" + S.deviceId + "/" + d[1] + "/config", JSON.stringify(d[2]), 0, true);
+    MQTT.publish(S.site.ha_prefix + "/" + d[0] + "/" + S.deviceId + "/" + d[1] + "/config", JSON.stringify(d[2]), 0, true);
     S.mqtt.disc++;
   }
 }
 
+function mqttOn() {
+  return !DRY_RUN && S.loaded && S.site.mqtt;
+}
+
 function publishState(force) {
-  if (DRY_RUN || !S.loaded || !MQTT.isConnected()) return;
+  if (!mqttOn() || !MQTT.isConnected()) return;
   let js = stateJson();
   if (!force && js === S.mqtt.lastState && S.up - S.mqtt.stateAt < STATE_PUBLISH_S) return;
   MQTT.publish(topic("state"), js, 0, true);
@@ -911,7 +993,7 @@ function publishDiag() {
 }
 
 function mqttTick() {
-  if (DRY_RUN || !MQTT.isConnected()) return;
+  if (!mqttOn() || !MQTT.isConnected()) return;
   if (S.mqtt.disc >= 0) {
     publishDiscoveryBatch();
     return;
@@ -931,10 +1013,10 @@ function onMqttConnect() {
 // Republish everything and clear the commands the old script left retained on the broker.
 function handleConnect() {
   S.mqtt.connects++;
-  if (DRY_RUN) return;
+  if (!mqttOn()) return;
   MQTT.publish(S.deviceId + "/number/cmd", "", 0, true);
   MQTT.publish(S.deviceId + "/select/cmd", "", 0, true);
-  S.mqtt.disc = 0;
+  S.mqtt.disc = S.site.ha_discovery ? 0 : -1;
   S.mqtt.lastState = "";
   S.mqtt.diagKey = "";
 }
@@ -988,11 +1070,12 @@ function handleCmd(t, msg) {
 
 function httpTimeTick() {
   let src = S.clock.src;
-  if (src === "ntp" || src === "http") return;
+  let urls = S.site.time_urls;
+  if (src === "ntp" || src === "http" || urls.length === 0) return;
   if (S.up - S.bootUp < HTTP_TIME_DELAY_S || S.up < S.http.nextAt) return;
   S.http.nextAt = S.up + HTTP_TIME_RETRY_S;
-  let url = HTTP_TIME_URLS[S.http.idx];
-  S.http.idx = (S.http.idx + 1) % HTTP_TIME_URLS.length;
+  let url = urls[S.http.idx % urls.length];
+  S.http.idx = (S.http.idx + 1) % urls.length;
   rpc("HTTP.GET", { url: url, timeout: 5 }, onHttpTime);
 }
 
@@ -1034,7 +1117,7 @@ function onScheduleList(res, code, msg) {
     if (call === null || !call.params) continue;
     let method = String(call.method).toUpperCase();
     if (method === "SCRIPT.START" && call.params.id === S.scriptId) hasWatchdog = true;
-    if (method === "SWITCH.SET" && call.params.id === SWITCH_ID) {
+    if (method === "SWITCH.SET" && call.params.id === S.site.switch_id) {
       log("removing legacy schedule " + job.id);
       rpc("Schedule.Delete", { id: job.id }, null);
     }
@@ -1087,7 +1170,7 @@ function onTick() {
 
 function onStatus(ev) {
   try {
-    if (ev.component !== "switch:" + SWITCH_ID || !ev.delta || typeof ev.delta.output !== "boolean") return;
+    if (!S.loaded || ev.component !== "switch:" + S.site.switch_id || !ev.delta || typeof ev.delta.output !== "boolean") return;
     if (ev.delta.output === S.relay) return;
     S.up = Shelly.getComponentStatus("sys").uptime;
     relayChanged(ev.delta.output, ev.delta.source || "?");
@@ -1097,7 +1180,8 @@ function onStatus(ev) {
 }
 
 function setupMqtt() {
-  if (DRY_RUN) return;
+  if (!mqttOn() || S.mqtt.setup) return;
+  S.mqtt.setup = true;
   try {
     MQTT.setConnectHandler(onMqttConnect);
     MQTT.subscribe(topic("cmd/+"), onMqttCmd);
@@ -1116,17 +1200,13 @@ function boot() {
   S.up = Shelly.getComponentStatus("sys").uptime;
   S.bootUp = S.up;
   let sysCfg = Shelly.getComponentConfig("sys");
-  if (sysCfg && sysCfg.location && isNum(sysCfg.location.lon)) S.lon = sysCfg.location.lon;
+  if (sysCfg && sysCfg.location && isNum(sysCfg.location.lon)) S.locationLon = sysCfg.location.lon;
   let mqttCfg = Shelly.getComponentConfig("mqtt");
   S.availTopic = (mqttCfg && mqttCfg.topic_prefix ? mqttCfg.topic_prefix : S.deviceId) + "/online";
-  let sw = Shelly.getComponentStatus("switch", SWITCH_ID);
-  S.relay = sw ? sw.output === true : false;
-  S.relayChangeUp = S.up;
   Timer.set(TICK_MS, true, onTick);
   S.booted = true;
   Shelly.addStatusHandler(onStatus);
-  setupMqtt();
-  log("start " + VERSION + (DRY_RUN ? " (dry-run)" : "") + ", relay " + onOff(S.relay));
+  log("start " + VERSION + (DRY_RUN ? " (dry-run)" : ""));
   onTick();
 }
 

@@ -192,3 +192,28 @@ test("freezeStep: probe failures", () => {
   assert.equal(freeze(w({ air: null, water: null, lastAir: 5 }), F0).f.active, false);
   assert.equal(freeze(w({ air: null, water: null, lastAir: null }), F0).f.active, false);
 });
+
+test("validateSite: defaults, overrides, rejects invalid and unknown fields", () => {
+  let r = call("validateSite(undefined)");
+  assert.equal(r.bad, false);
+  assert.deepEqual(r.site, {
+    switch_id: 0, air_id: 100, water_id: 101, name: "pool_pump", longitude: null,
+    time_urls: [], mqtt: true, ha_discovery: true, ha_prefix: "homeassistant",
+  });
+  r = call('validateSite({ water_id: 103, longitude: -4.5, time_urls: ["http://10.0.0.1/"], mqtt: false })');
+  assert.equal(r.bad, false);
+  assert.equal(r.site.water_id, 103);
+  assert.equal(r.site.longitude, -4.5);
+  assert.deepEqual(r.site.time_urls, ["http://10.0.0.1/"]);
+  assert.equal(r.site.mqtt, false);
+  for (const bad of [
+    "{ switch_id: 9 }", "{ air_id: 100.5 }", '{ name: "Pool" }', '{ name: "" }', "{ longitude: 200 }",
+    '{ time_urls: "http://x" }', '{ time_urls: ["ftp://x"] }', '{ time_urls: ["http://a", "http://b", "http://c", "http://d"] }',
+    '{ mqtt: "yes" }', '{ ha_prefix: "Home Assistant" }', "{ foo: 1 }", '"garbage{"',
+  ]) {
+    const v = call(`validateSite(${bad})`);
+    assert.equal(v.bad, true, bad);
+    assert.equal(v.site.switch_id, 0, bad);
+  }
+  assert.equal(call('validateSite({ ha_prefix: "ha/test-1" })').site.ha_prefix, "ha/test-1");
+});

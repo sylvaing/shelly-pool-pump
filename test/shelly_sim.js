@@ -26,6 +26,7 @@ function createSim(opts) {
     statusHandlers: [],
     dead: null,
     scriptId: opts.scriptId || 3,
+    location: opts.location === undefined ? { tz: "Europe/Paris", lat: 43.5321, lon: 1.2299 } : opts.location,
     callDelay: 0.2,
     relayHistory: [], // { unix, on, source }
     faults: {}, // name -> function(args) returning a value or throwing, to inject API failures
@@ -143,7 +144,7 @@ function createSim(opts) {
       return null;
     },
     getComponentConfig(type) {
-      if (type === "sys") return { location: { tz: "Europe/Paris", lat: 43.5321, lon: 1.2299 } };
+      if (type === "sys") return { location: sim.location || { tz: "Europe/Paris", lat: null, lon: null } };
       if (type === "mqtt") return { topic_prefix: "shellyplus1-441793947564" };
       return null;
     },
