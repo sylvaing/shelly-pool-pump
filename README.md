@@ -79,8 +79,8 @@ thresholds can be changed.
 **Without network.** The clock comes, in this order, from:
 
 1. NTP;
-2. the `Date` header of a small web answer from your router or another local server, if you
-   configure one;
+2. the `Date` header of your router (the network gateway, found automatically), read with a
+   `HEAD` request so that no page is downloaded;
 3. an estimate from the last time saved (saved every hour).
 
 With no time at all, the script filters right after start-up, then once every 24 hours.
@@ -148,17 +148,24 @@ script updates, so you never have to edit the code.
 | `water_id` | `101` | id of the water probe |
 | `name` | `"pool_pump"` | Home Assistant device name and `unique_id` prefix (lowercase, digits, `_`). **Do not change it once the entities exist**: they would be duplicated |
 | `longitude` | `null` | overrides the Shelly location |
-| `time_urls` | `[]` | up to 3 URLs used to read the time from the `Date` header when NTP fails. **Only URLs with a very small answer**, such as an error page of your router: a large page exhausts the script memory and stops it |
+| `time_urls` | `null` | where to read the time (`Date` header, `HEAD` request) when NTP fails. `null`: the network gateway, found automatically (Wi-Fi gateway with a static IP, else `<Shelly IP>.1`). `[]`: none. Or up to 3 URLs of local web servers |
 | `mqtt` | `true` | publish the state and accept commands over MQTT |
 | `ha_discovery` | `true` | announce the entities to Home Assistant |
 | `ha_prefix` | `"homeassistant"` | MQTT discovery prefix |
 
-To write it, run one of these commands, then restart the script:
+Most installations need **no `pool_site` at all**. When one is needed, write it in one of these
+ways, then restart the script (Scripts page: Stop, then Start):
 
-```
-node tools/shelly.mjs site '{"time_urls":["http://192.168.1.1/x404"]}'
-curl -X POST http://<shelly>/rpc -d '{"id":1,"method":"KVS.Set","params":{"key":"pool_site","value":{"water_id":102}}}'
-```
+- **Shelly web UI:** open the **KVS** page of the menu and add the key
+  `pool_site` with the JSON as value, for example `{"water_id":102}`.
+- **Any browser:** open
+  `http://<shelly>/rpc/KVS.Set?key="pool_site"&value={"water_id":102}`
+  (the quotes around `pool_site` are needed). The answer shows the new `rev`.
+- **From a computer:** `node tools/shelly.mjs site '{"water_id":102}'`, or
+  `curl -X POST http://<shelly>/rpc -d '{"id":1,"method":"KVS.Set","params":{"key":"pool_site","value":{"water_id":102}}}'`.
+
+You can also edit the `SITE_DEFAULTS` block at the top of `pool.js` before saving the script,
+but that change is lost at the next script update, unlike `pool_site`.
 
 Invalid or unknown fields are ignored, and the diagnostic reports them.
 

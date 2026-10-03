@@ -29,14 +29,15 @@ let DEBUG = false;
 
 // Installation settings. Change them without editing the code by storing a JSON object
 // with only the fields to override in KVS "pool_site", then restart the script, e.g.
-//   {"water_id":102,"time_urls":["http://192.168.1.1/x404"]}
+//   {"water_id":102,"time_urls":["http://192.168.1.10/"]}
+// The Shelly web UI edits KVS on its "KVS" page.
 let SITE_DEFAULTS = {
   switch_id: 0, // relay driving the pump contactor
   air_id: 100, // DS18B20 in the air around the pump and filter
   water_id: 101, // DS18B20 on the pipe: pool water when running, still water when stopped
   name: "pool_pump", // HA device name and unique_id prefix: keep it once entities exist
   longitude: null, // null: use the Shelly location (Settings > Location)
-  time_urls: [], // fallback clock: URLs answering with a small body and a Date header
+  time_urls: null, // fallback clock when NTP fails: null = the network gateway, [] = none
   mqtt: true, // publish state and accept commands over MQTT
   ha_discovery: true, // announce the entities to Home Assistant
   ha_prefix: "homeassistant",
@@ -54,8 +55,8 @@ let STATE_PUBLISH_S = 60;
 let DIAG_PUBLISH_S = 300;
 let DISCOVERY_PER_TICK = 4;
 
-// Fallback clock (site time_urls): never point it at a large page, its body would
-// exhaust the script memory and kill the script.
+// Fallback clock: HEAD request (headers only: a page body could exhaust the script
+// memory) and its Date header.
 let HTTP_TIME_DELAY_S = 120;
 let MAX_TIME_URLS = 3;
 let HTTP_TIME_RETRY_S = 300;
@@ -124,6 +125,8 @@ let S = {
   scriptId: 0,
   availTopic: "",
   locationLon: null, // from the Shelly settings
+  gatewayUrl: null, // default fallback clock
+  timeUrls: [],
   lon: 0,
   lonMissing: false,
   up: 0,
@@ -292,12 +295,12 @@ function validateSite(raw) {
     water_id: isId(src.water_id, 100, 199),
     name: isName(src.name, ""),
     longitude: src.longitude === null || (isNum(src.longitude) && Math.abs(src.longitude) <= 180),
-    time_urls: Array.isArray(src.time_urls) && src.time_urls.length <= MAX_TIME_URLS,
+    time_urls: src.time_urls === null || (Array.isArray(src.time_urls) && src.time_urls.length <= MAX_TIME_URLS),
     mqtt: typeof src.mqtt === "boolean",
     ha_discovery: typeof src.ha_discovery === "boolean",
     ha_prefix: isName(src.ha_prefix, "/-"),
   };
-  if (checks.time_urls) {
+  if (checks.time_urls && src.time_urls !== null) {
     for (let i = 0; i < src.time_urls.length; i++) {
       let u = src.time_urls[i];
       if (typeof u !== "string" || u.indexOf("http") !== 0) checks.time_urls = false;
@@ -555,6 +558,7 @@ function onStorageLoaded(res, code, msg) {
 
 function applyLoaded(site, c, s, newCfg, newState) {
   S.site = site.site;
+  S.timeUrls = [];
   if (site.bad) noteError("KVS", "pool_site has invalid or unknown fields, defaults used for them");
   applySite();
   S.cfg = c.cfg;
@@ -582,8 +586,9 @@ function estimateBase(st, up) {
   return up >= st.last_up ? st.last_time - st.last_up : st.last_time;
 }
 
-// Settings that depend on pool_site: relay state, longitude.
+// Settings that depend on pool_site: relay state, longitude, fallback clock URLs.
 function applySite() {
+  S.timeUrls = S.site.time_urls !== null ? S.site.time_urls : S.gatewayUrl !== null ? [S.gatewayUrl] : [];
   let sw = Shelly.getComponentStatus("switch", S.site.switch_id);
   if (sw === null) noteError("site", "switch " + S.site.switch_id + " not found");
   S.relay = sw ? sw.output === true : false;
@@ -1070,13 +1075,13 @@ function handleCmd(t, msg) {
 
 function httpTimeTick() {
   let src = S.clock.src;
-  let urls = S.site.time_urls;
+  let urls = S.timeUrls;
   if (src === "ntp" || src === "http" || urls.length === 0) return;
   if (S.up - S.bootUp < HTTP_TIME_DELAY_S || S.up < S.http.nextAt) return;
   S.http.nextAt = S.up + HTTP_TIME_RETRY_S;
   let url = urls[S.http.idx % urls.length];
   S.http.idx = (S.http.idx + 1) % urls.length;
-  rpc("HTTP.GET", { url: url, timeout: 5 }, onHttpTime);
+  rpc("HTTP.Request", { method: "HEAD", url: url, timeout: 5 }, onHttpTime);
 }
 
 function onHttpTime(res, code, msg) {
@@ -1191,6 +1196,18 @@ function setupMqtt() {
   }
 }
 
+// http://<gateway>/ from the Wi-Fi settings (static IP), else <own IP>.1 (DHCP: usual router address).
+function gatewayUrl() {
+  let cfg = Shelly.getComponentConfig("wifi");
+  let gw = cfg && cfg.sta && typeof cfg.sta.gw === "string" && cfg.sta.gw.length > 0 ? cfg.sta.gw : null;
+  if (gw === null) {
+    let st = Shelly.getComponentStatus("wifi");
+    let ip = st && typeof st.sta_ip === "string" ? st.sta_ip.split(".") : [];
+    if (ip.length === 4) gw = ip[0] + "." + ip[1] + "." + ip[2] + ".1";
+  }
+  return gw === null ? null : "http://" + gw + "/";
+}
+
 function boot() {
   let info = Shelly.getDeviceInfo();
   S.deviceId = info.id;
@@ -1201,6 +1218,7 @@ function boot() {
   S.bootUp = S.up;
   let sysCfg = Shelly.getComponentConfig("sys");
   if (sysCfg && sysCfg.location && isNum(sysCfg.location.lon)) S.locationLon = sysCfg.location.lon;
+  S.gatewayUrl = gatewayUrl();
   let mqttCfg = Shelly.getComponentConfig("mqtt");
   S.availTopic = (mqttCfg && mqttCfg.topic_prefix ? mqttCfg.topic_prefix : S.deviceId) + "/online";
   Timer.set(TICK_MS, true, onTick);

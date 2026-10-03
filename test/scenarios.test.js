@@ -142,7 +142,7 @@ test("6a. power cut, no network: estimated clock, then real clock turns the pump
   assert.equal(st(sim, "S.clock.src"), "estimated");
   assert.equal(sim.lastState().diag, "heure_estimee");
   assert.equal(sim.relay, true, "estimate still inside the window");
-  assert.ok(sim.rpcLog.some((r) => r.method === "HTTP.GET"), "HTTP clock tried");
+  assert.ok(sim.rpcLog.some((r) => r.method === "HTTP.Request"), "HTTP clock tried");
   assert.ok(!sim.rpcLog.some((r) => r.method === "Sys.SetTime"));
   sim.ntp = true;
   sim.advance(20);
@@ -180,8 +180,9 @@ test("7. first boot without any data or clock: runs at once, then every 24 h", (
 test("8. NTP down: clock from the HTTP Date header (box, then Home Assistant)", () => {
   let sim = boot({ clockAt0: at(0, 10), ntp: false, kvs: { pool_site: { time_urls: TIME_URLS }, pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) } });
   run(sim, 200);
-  const get = sim.rpcLog.find((r) => r.method === "HTTP.GET");
+  const get = sim.rpcLog.find((r) => r.method === "HTTP.Request");
   assert.equal(get.params.url, "http://192.168.1.1/x404");
+  assert.equal(get.params.method, "HEAD", "headers only: no page body in memory");
   const set = sim.rpcLog.find((r) => r.method === "Sys.SetTime");
   assert.ok(set && Math.abs(set.params.unixtime - sim.trueUnix()) < 120, "clock set to the real time");
   assert.equal(st(sim, "S.clock.src"), "http");
@@ -194,7 +195,7 @@ test("8. NTP down: clock from the HTTP Date header (box, then Home Assistant)", 
     kvs: { pool_site: { time_urls: TIME_URLS }, pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) },
   });
   run(sim, 500);
-  assert.deepEqual(sim.rpcLog.filter((r) => r.method === "HTTP.GET").map((r) => r.params.url), ["http://192.168.1.1/x404", "http://192.168.1.105:8123/api/"]);
+  assert.deepEqual(sim.rpcLog.filter((r) => r.method === "HTTP.Request").map((r) => r.params.url), ["http://192.168.1.1/x404", "http://192.168.1.105:8123/api/"]);
   assert.equal(st(sim, "S.clock.src"), "http");
 
   // Garbage header: refused, reported.
@@ -471,10 +472,23 @@ test("20. no location: reported, solar noon assumed for longitude 0", () => {
   assert.equal(sim2.lastState().diag, "ok");
 });
 
-test("21. default site: no HTTP clock fallback, invalid pool_site fields reported", () => {
+test("21. fallback clock defaults to the gateway; [] disables it; invalid pool_site fields reported", () => {
+  // DHCP: gateway guessed as <own IP>.1
   let sim = boot({ clockAt0: at(0, 10), ntp: false, kvs: { pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) } });
+  run(sim, 200);
+  let req = sim.rpcLog.find((r) => r.method === "HTTP.Request");
+  assert.equal(req.params.url, "http://192.168.1.1/");
+  assert.equal(req.params.method, "HEAD");
+  assert.equal(st(sim, "S.clock.src"), "http");
+  // Static IP: gateway from the Wi-Fi settings
+  sim = boot({ clockAt0: at(0, 10), ntp: false, wifi: { gw: "10.0.0.254", ip: "10.0.0.42" }, kvs: { pool_cfg: cfg() } });
+  run(sim, 200);
+  assert.equal(sim.rpcLog.find((r) => r.method === "HTTP.Request").params.url, "http://10.0.0.254/");
+  // Disabled
+  sim = boot({ clockAt0: at(0, 10), ntp: false, kvs: { pool_site: { time_urls: [] }, pool_cfg: cfg(), pool_state: state({ last_time: at(0, 9) }) } });
   run(sim, 900);
-  assert.equal(sim.rpcLog.filter((r) => r.method === "HTTP.GET").length, 0, "no URL configured: no request");
+  assert.equal(sim.rpcLog.filter((r) => r.method === "HTTP.Request").length, 0, "time_urls [] : no request");
+  // Invalid fields
   sim = boot({ clockAt0: at(0, 10), kvs: { pool_site: { water_id: 7, name: "Pool Pump!", colour: "blue", air_id: 104 }, pool_cfg: cfg() } });
   sim.temps[104] = 12;
   run(sim, 60);
@@ -484,3 +498,12 @@ test("21. default site: no HTTP clock fallback, invalid pool_site fields reporte
   assert.ok(sim.errors().some((l) => l.msg.indexOf("pool_site") >= 0));
   assertAlive(sim);
 });
+
+test("22. pool_site written as a JSON string (Shelly web UI KVS page) is accepted", () => {
+  const sim = boot({ clockAt0: at(0, 10), temps: { 105: 9 }, kvs: { pool_site: '{"air_id":105}', pool_cfg: cfg() } });
+  run(sim, 60);
+  assert.equal(st(sim, "S.site.air_id"), 105);
+  assert.equal(st(sim, "S.air"), 9);
+  assert.deepEqual(noUnexpectedErrors(sim), []);
+});
+

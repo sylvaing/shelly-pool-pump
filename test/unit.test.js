@@ -198,7 +198,7 @@ test("validateSite: defaults, overrides, rejects invalid and unknown fields", ()
   assert.equal(r.bad, false);
   assert.deepEqual(r.site, {
     switch_id: 0, air_id: 100, water_id: 101, name: "pool_pump", longitude: null,
-    time_urls: [], mqtt: true, ha_discovery: true, ha_prefix: "homeassistant",
+    time_urls: null, mqtt: true, ha_discovery: true, ha_prefix: "homeassistant",
   });
   r = call('validateSite({ water_id: 103, longitude: -4.5, time_urls: ["http://10.0.0.1/"], mqtt: false })');
   assert.equal(r.bad, false);
@@ -216,4 +216,6 @@ test("validateSite: defaults, overrides, rejects invalid and unknown fields", ()
     assert.equal(v.site.switch_id, 0, bad);
   }
   assert.equal(call('validateSite({ ha_prefix: "ha/test-1" })').site.ha_prefix, "ha/test-1");
+  assert.deepEqual(call("validateSite({ time_urls: [] })").site.time_urls, []);
+  assert.equal(call("validateSite({ time_urls: null })").site.time_urls, null);
 });

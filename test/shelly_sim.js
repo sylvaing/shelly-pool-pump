@@ -26,6 +26,7 @@ function createSim(opts) {
     statusHandlers: [],
     dead: null,
     scriptId: opts.scriptId || 3,
+    wifi: opts.wifi || { gw: null, ip: "192.168.1.142" }, // gw set only with a static IP
     location: opts.location === undefined ? { tz: "Europe/Paris", lat: 43.5321, lon: 1.2299 } : opts.location,
     callDelay: 0.2,
     relayHistory: [], // { unix, on, source }
@@ -87,8 +88,9 @@ function createSim(opts) {
         sim.schedules.push(job);
         return [{ id: job.id, rev: 1 }, 0, ""];
       }
-      case "HTTP.GET": {
-        const r = sim.http(p.url);
+      case "HTTP.GET":
+      case "HTTP.Request": {
+        const r = sim.http(p.url, p.method || "GET");
         if (r === null) return [null, -114, "connection failed"];
         return [r, 0, ""];
       }
@@ -140,12 +142,14 @@ function createSim(opts) {
         return { id, tC: sim.temps[id] };
       }
       if (type === "switch") return { id: 0, source: "init", output: sim.relay, temperature: { tC: sim.relayTemp } };
+      if (type === "wifi") return { sta_ip: sim.wifi.ip, status: "got ip" };
       if (type === "script") return { id, running: true, mem_used: 4000, mem_peak: 6000, mem_free: 20000 };
       return null;
     },
     getComponentConfig(type) {
       if (type === "sys") return { location: sim.location || { tz: "Europe/Paris", lat: null, lon: null } };
       if (type === "mqtt") return { topic_prefix: "shellyplus1-441793947564" };
+      if (type === "wifi") return { sta: { ipv4mode: sim.wifi.gw ? "static" : "dhcp", gw: sim.wifi.gw } };
       return null;
     },
     getDeviceInfo() {
