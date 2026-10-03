@@ -13,3 +13,7 @@ node --test "test/*.test.js"
 | `unit.test.js` | pure functions: duration table, solar noon, window, freeze logic, validation |
 | `scenarios.test.js` | 15 behaviour scenarios + a chaos test (random API failures) |
 | `smoke.js` | verbose run: migration from the v1 script, then two days (`node test/smoke.js`) |
+
+Device side, `tools/shelly.mjs` (same Node, no dependency) uploads and watches the script:
+`status`, `deploy pool.js --name <name> [--dry-run] [--autostart]`, `compare <id>` (v2 decisions
+vs the v1 schedules), `eval`, `logs`, `stop|start|delete <id>`.
